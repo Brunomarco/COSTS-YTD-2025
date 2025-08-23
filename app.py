@@ -383,6 +383,136 @@ if uploaded_file is not None:
             }
         )
         
+        # NEW: Pareto Analysis Section
+        st.markdown("---")
+        st.subheader("📊 Pareto Analysis - 80/20 Rule")
+        
+        col1, col2 = st.columns(2)
+        
+        with col1:
+            st.markdown("#### Total Cost Pareto")
+            
+            # Get all accounts for Pareto (not just top 10)
+            all_account_costs = filtered_df.groupby(['ACCT', 'ACCT NM'])['Total cost_EUR'].sum().reset_index()
+            all_account_costs.columns = ['Account', 'Account Name', 'Total Cost']
+            all_account_costs = all_account_costs.sort_values('Total Cost', ascending=False)
+            
+            # Calculate cumulative percentage
+            all_account_costs['Cumulative Cost'] = all_account_costs['Total Cost'].cumsum()
+            total = all_account_costs['Total Cost'].sum()
+            all_account_costs['Cumulative %'] = (all_account_costs['Cumulative Cost'] / total * 100).round(1)
+            all_account_costs['Individual %'] = (all_account_costs['Total Cost'] / total * 100).round(1)
+            
+            # Take top 20 for visibility
+            pareto_data = all_account_costs.head(20).reset_index(drop=True)
+            
+            # Create Pareto chart
+            fig_pareto = go.Figure()
+            
+            # Bar chart for individual percentages
+            fig_pareto.add_trace(go.Bar(
+                x=pareto_data.index + 1,
+                y=pareto_data['Individual %'],
+                name='Individual %',
+                marker_color='lightblue',
+                yaxis='y'
+            ))
+            
+            # Line chart for cumulative percentage
+            fig_pareto.add_trace(go.Scatter(
+                x=pareto_data.index + 1,
+                y=pareto_data['Cumulative %'],
+                name='Cumulative %',
+                mode='lines+markers',
+                marker_color='red',
+                yaxis='y2',
+                line=dict(width=2)
+            ))
+            
+            # Add 80% reference line
+            fig_pareto.add_hline(y=80, line_dash="dash", line_color="green", 
+                                annotation_text="80%", yref='y2')
+            
+            fig_pareto.update_layout(
+                height=400,
+                xaxis_title="Account Rank",
+                yaxis=dict(title="Individual %", side='left'),
+                yaxis2=dict(title="Cumulative %", overlaying='y', side='right', range=[0, 100]),
+                hovermode='x unified',
+                showlegend=True,
+                legend=dict(x=0.01, y=0.99)
+            )
+            
+            st.plotly_chart(fig_pareto, use_container_width=True)
+            
+            # Show key insight
+            accounts_80 = all_account_costs[all_account_costs['Cumulative %'] <= 80].shape[0]
+            total_accounts = len(all_account_costs)
+            if total_accounts > 0:
+                st.info(f"💡 **Insight**: {accounts_80} accounts ({accounts_80/total_accounts*100:.1f}%) contribute to 80% of total costs")
+        
+        with col2:
+            st.markdown("#### NET Amount Pareto")
+            
+            # Get all accounts for NET Pareto
+            all_account_net = filtered_df.groupby(['ACCT', 'ACCT NM'])['NET_EUR'].sum().reset_index()
+            all_account_net.columns = ['Account', 'Account Name', 'NET']
+            all_account_net = all_account_net[all_account_net['NET'] > 0]  # Filter out zeros
+            all_account_net = all_account_net.sort_values('NET', ascending=False)
+            
+            # Calculate cumulative percentage
+            all_account_net['Cumulative NET'] = all_account_net['NET'].cumsum()
+            total_net = all_account_net['NET'].sum()
+            all_account_net['Cumulative %'] = (all_account_net['Cumulative NET'] / total_net * 100).round(1)
+            all_account_net['Individual %'] = (all_account_net['NET'] / total_net * 100).round(1)
+            
+            # Take top 20 for visibility
+            pareto_net = all_account_net.head(20).reset_index(drop=True)
+            
+            # Create Pareto chart for NET
+            fig_pareto_net = go.Figure()
+            
+            # Bar chart for individual percentages
+            fig_pareto_net.add_trace(go.Bar(
+                x=pareto_net.index + 1,
+                y=pareto_net['Individual %'],
+                name='Individual %',
+                marker_color='lightgreen',
+                yaxis='y'
+            ))
+            
+            # Line chart for cumulative percentage
+            fig_pareto_net.add_trace(go.Scatter(
+                x=pareto_net.index + 1,
+                y=pareto_net['Cumulative %'],
+                name='Cumulative %',
+                mode='lines+markers',
+                marker_color='red',
+                yaxis='y2',
+                line=dict(width=2)
+            ))
+            
+            # Add 80% reference line
+            fig_pareto_net.add_hline(y=80, line_dash="dash", line_color="green", 
+                                     annotation_text="80%", yref='y2')
+            
+            fig_pareto_net.update_layout(
+                height=400,
+                xaxis_title="Account Rank",
+                yaxis=dict(title="Individual %", side='left'),
+                yaxis2=dict(title="Cumulative %", overlaying='y', side='right', range=[0, 100]),
+                hovermode='x unified',
+                showlegend=True,
+                legend=dict(x=0.01, y=0.99)
+            )
+            
+            st.plotly_chart(fig_pareto_net, use_container_width=True)
+            
+            # Show key insight
+            if len(all_account_net) > 0:
+                accounts_80_net = all_account_net[all_account_net['Cumulative %'] <= 80].shape[0]
+                st.info(f"💡 **Insight**: {accounts_80_net} accounts ({accounts_80_net/len(all_account_net)*100:.1f}%) contribute to 80% of NET amount")
+        
         # Download processed data
         st.markdown("---")
         col1, col2, col3 = st.columns([1, 1, 2])
