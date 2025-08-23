@@ -179,23 +179,24 @@ if uploaded_file is not None:
         if selected_countries:
             filtered_df = filtered_df[filtered_df['PU CTRY'].isin(selected_countries)]
         
-        # Key Metrics
-        col1, col2, col3, col4 = st.columns(4)
+        # Key Metrics - Now with 5 columns for better spacing
+        st.subheader("📊 Key Metrics")
+        col1, col2, col3, col4, col5 = st.columns(5)
         
         with col1:
             total_orders = len(filtered_df)
             st.metric(
-                label="📦 Total Billed Orders",
+                label="📦 Total Orders",
                 value=f"{total_orders:,}",
-                delta=f"All orders shown are 440-BILLED"
+                delta="440-BILLED only"
             )
         
         with col2:
             total_cost = filtered_df['Total cost_EUR'].sum()
             st.metric(
-                label="💰 Total Cost (EUR)",
-                value=f"€{total_cost:,.2f}",
-                delta=f"Avg: €{(total_cost/total_orders if total_orders > 0 else 0):,.2f}"
+                label="💰 Total Cost",
+                value=f"€{total_cost:,.0f}",
+                delta=f"Avg: €{(total_cost/total_orders if total_orders > 0 else 0):,.0f}"
             )
         
         with col3:
@@ -203,18 +204,28 @@ if uploaded_file is not None:
             difference = total_net - total_cost
             diff_color = "normal" if difference >= 0 else "inverse"
             st.metric(
-                label="📈 Total NET (EUR)",
-                value=f"€{total_net:,.2f}",
-                delta=f"Diff: €{difference:,.2f}",
-                delta_color=diff_color
+                label="📈 NET Amount",
+                value=f"€{total_net:,.0f}",
+                delta=f"Markup: €{difference:,.0f}",
+                delta_color=diff_color,
+                help="NET typically represents the amount including margin/markup"
             )
         
         with col4:
+            total_invoiced = filtered_df['TOTAL$_EUR'].sum()
+            st.metric(
+                label="💵 Invoiced",
+                value=f"€{total_invoiced:,.0f}",
+                delta=f"{filtered_df[filtered_df['TOTAL$_EUR'] > 0]['ORD#'].count()} orders",
+                help="TOTAL$ represents the final invoiced amount to customers"
+            )
+        
+        with col5:
             unique_accounts = filtered_df['ACCT'].nunique()
             st.metric(
-                label="👥 Unique Accounts",
+                label="👥 Accounts",
                 value=f"{unique_accounts:,}",
-                delta=f"Active: {filtered_df[filtered_df['Total cost_EUR'] > 0]['ACCT'].nunique()}"
+                delta=f"Active accounts"
             )
         
         st.markdown("---")
@@ -270,18 +281,177 @@ if uploaded_file is not None:
             )
             st.plotly_chart(fig_cost_presence, use_container_width=True)
         
-        # Top Accounts by Cost
+        # Top Accounts by Cost with better spacing
         st.markdown("---")
         st.subheader("🏆 Top 10 Accounts by Total Cost")
         
         account_costs = filtered_df.groupby(['ACCT', 'ACCT NM']).agg({
             'Total cost_EUR': 'sum',
             'NET_EUR': 'sum',
+            'TOTAL$_EUR': 'sum',
             'ORD#': 'count'
         }).reset_index()
-        account_costs.columns = ['Account', 'Account Name', 'Total Cost', 'NET', 'Orders']
+        account_costs.columns = ['Account', 'Account Name', 'Total Cost', 'NET', 'TOTAL
+        
+        # Monthly Trend and Country Analysis
+        col1, col2 = st.columns(2)
+        
+        with col1:
+            st.subheader("📈 Monthly Cost Trend")
+            monthly_data = filtered_df.groupby('Month').agg({
+                'Total cost_EUR': 'sum',
+                'ORD#': 'count'
+            }).reset_index()
+            monthly_data.columns = ['Month', 'Total Cost', 'Orders']
+            
+            fig_trend = go.Figure()
+            fig_trend.add_trace(go.Bar(
+                x=monthly_data['Month'],
+                y=monthly_data['Total Cost'],
+                name='Total Cost',
+                marker_color='#667eea'
+            ))
+            fig_trend.add_trace(go.Scatter(
+                x=monthly_data['Month'],
+                y=monthly_data['Orders'] * (monthly_data['Total Cost'].max() / monthly_data['Orders'].max()),
+                name='Orders (scaled)',
+                yaxis='y2',
+                line=dict(color='#f5576c', width=3)
+            ))
+            fig_trend.update_layout(
+                height=400,
+                xaxis_title="Month",
+                yaxis_title="Total Cost (EUR)",
+                yaxis2=dict(
+                    title="Orders",
+                    overlaying='y',
+                    side='right'
+                ),
+                hovermode='x unified'
+            )
+            st.plotly_chart(fig_trend, use_container_width=True)
+        
+        with col2:
+            st.subheader("🌍 Top 10 Countries by Cost")
+            country_costs = filtered_df.groupby('PU CTRY')['Total cost_EUR'].sum().sort_values(ascending=False).head(10)
+            
+            fig_country = px.bar(
+                x=country_costs.index,
+                y=country_costs.values,
+                color=country_costs.values,
+                color_continuous_scale='Plasma',
+                text=country_costs.values
+            )
+            fig_country.update_traces(texttemplate='€%{text:,.0f}', textposition='outside')
+            fig_country.update_layout(
+                height=400,
+                xaxis_title="Country",
+                yaxis_title="Total Cost (EUR)",
+                showlegend=False
+            )
+            st.plotly_chart(fig_country, use_container_width=True)
+        
+        # Detailed Account Analysis Table
+        st.markdown("---")
+        st.subheader("📋 Accounts with Highest Cost Differences")
+        
+        # Calculate account differences
+        account_diff = filtered_df.groupby(['ACCT', 'ACCT NM']).agg({
+            'Total cost_EUR': 'sum',
+            'NET_EUR': 'sum',
+            'ORD#': 'count'
+        }).reset_index()
+        account_diff.columns = ['Account', 'Account Name', 'Total Cost (EUR)', 'NET (EUR)', 'Orders']
+        account_diff['Difference (EUR)'] = account_diff['NET (EUR)'] - account_diff['Total Cost (EUR)']
+        account_diff['Diff %'] = (account_diff['Difference (EUR)'] / account_diff['Total Cost (EUR)'] * 100).round(2)
+        account_diff = account_diff.sort_values('Difference (EUR)', ascending=False, key=abs)
+        
+        # Format the columns
+        for col in ['Total Cost (EUR)', 'NET (EUR)', 'Difference (EUR)']:
+            account_diff[col] = account_diff[col].apply(lambda x: f"€{x:,.2f}")
+        account_diff['Diff %'] = account_diff['Diff %'].apply(lambda x: f"{x:.1f}%")
+        
+        # Display table with conditional formatting
+        st.dataframe(
+            account_diff.head(15),
+            use_container_width=True,
+            hide_index=True,
+            column_config={
+                "Account": st.column_config.TextColumn("Account", width="small"),
+                "Account Name": st.column_config.TextColumn("Account Name", width="large"),
+                "Orders": st.column_config.NumberColumn("Orders", width="small"),
+            }
+        )
+        
+        # Download processed data
+        st.markdown("---")
+        col1, col2, col3 = st.columns([1, 1, 2])
+        with col1:
+            csv = filtered_df.to_csv(index=False)
+            st.download_button(
+                label="📥 Download Filtered Data (CSV)",
+                data=csv,
+                file_name=f"cost_analysis_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv",
+                mime="text/csv"
+            )
+        
+        with col2:
+            # Summary statistics
+            st.download_button(
+                label="📊 Download Summary Report (CSV)",
+                data=account_diff.to_csv(index=False),
+                file_name=f"account_summary_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv",
+                mime="text/csv"
+            )
+        
+        # Footer
+        st.markdown("---")
+        st.caption(f"Dashboard generated on {datetime.now().strftime('%Y-%m-%d %H:%M:%S')} | Data contains {len(df):,} total records")
+        
+else:
+    # Instructions when no file is uploaded
+    st.info("👆 Please upload your Excel file to begin the analysis")
+    st.markdown("""
+    ### Expected Excel Format:
+    Your Excel file should contain the following columns:
+    - **ORD DT**: Order Date
+    - **ACCT**: Account Number
+    - **ACCT NM**: Account Name
+    - **OFC**: Office
+    - **ORD#**: Order Number
+    - **PU COST**: Pickup Cost (Direct cost)
+    - **SHIP COST**: Shipping Cost (Direct cost)
+    - **MAN COST**: Manufacturing Cost (Direct cost)
+    - **DEL COST**: Delivery Cost (Direct cost)
+    - **Total cost**: Sum of all direct costs
+    - **NET**: Amount with margin/markup applied
+    - **CURR**: Currency (EUR/GBP/USD/KRW/AUD/SGD)
+    - **INV#**: Invoice Number
+    - **TOTAL$**: Final invoiced amount to customer
+    - **STATUS**: Order Status (Dashboard shows only 440-BILLED)
+    - **PU CTRY**: Pickup Country
+    
+    ### Field Explanations:
+    - **Total Cost**: The sum of all direct operational costs (PU + SHIP + MAN + DEL)
+    - **NET**: The amount including your company's margin/markup on top of costs
+    - **TOTAL$**: The final amount invoiced to the customer (may include additional fees/charges)
+    
+    ### Currency Conversion:
+    All amounts will be automatically converted to EUR based on the CURR column for each row.
+    Current exchange rates to EUR:
+    - GBP: 1.17
+    - USD: 0.92
+    - KRW: 0.00069
+    - AUD: 0.60
+    - SGD: 0.68
+    """)
+, 'Orders']
         account_costs['Difference'] = account_costs['NET'] - account_costs['Total Cost']
         account_costs = account_costs.sort_values('Total Cost', ascending=False).head(10)
+        
+        # Calculate percentage for each account
+        total_sum = account_costs['Total Cost'].sum()
+        account_costs['Percentage'] = (account_costs['Total Cost'] / total_sum * 100).round(1)
         
         fig_top = px.bar(
             account_costs,
@@ -290,16 +460,1195 @@ if uploaded_file is not None:
             orientation='h',
             color='Total Cost',
             color_continuous_scale='Blues',
-            text='Total Cost'
+            text='Total Cost',
+            hover_data=['Percentage', 'Orders']
         )
-        fig_top.update_traces(texttemplate='€%{text:,.0f}', textposition='outside')
+        fig_top.update_traces(
+            texttemplate='€%{text:,.0f}', 
+            textposition='inside',
+            textfont_size=10,
+            insidetextanchor='middle'
+        )
         fig_top.update_layout(
             height=500,
             xaxis_title="Total Cost (EUR)",
             yaxis_title="",
-            showlegend=False
+            showlegend=False,
+            margin=dict(r=100),  # Add right margin for numbers
+            xaxis=dict(range=[0, account_costs['Total Cost'].max() * 1.15])  # Extend x-axis range
         )
         st.plotly_chart(fig_top, use_container_width=True)
+        
+        # Pareto Analysis Section
+        st.markdown("---")
+        col1, col2 = st.columns(2)
+        
+        with col1:
+            st.subheader("📊 Pareto Analysis - Total Cost")
+            
+            # Get all accounts for Pareto (not just top 10)
+            all_account_costs = filtered_df.groupby(['ACCT', 'ACCT NM']).agg({
+                'Total cost_EUR': 'sum'
+            }).reset_index()
+            all_account_costs.columns = ['Account', 'Account Name', 'Total Cost']
+            all_account_costs = all_account_costs.sort_values('Total Cost', ascending=False)
+            
+            # Calculate cumulative percentage
+            all_account_costs['Cumulative Cost'] = all_account_costs['Total Cost'].cumsum()
+            all_account_costs['Cumulative %'] = (all_account_costs['Cumulative Cost'] / all_account_costs['Total Cost'].sum() * 100).round(1)
+            all_account_costs['Individual %'] = (all_account_costs['Total Cost'] / all_account_costs['Total Cost'].sum() * 100).round(1)
+            
+            # Take top 20 for visibility
+            pareto_data = all_account_costs.head(20)
+            
+            # Create Pareto chart
+            fig_pareto = go.Figure()
+            
+            # Bar chart for individual percentages
+            fig_pareto.add_trace(go.Bar(
+                x=pareto_data.index,
+                y=pareto_data['Individual %'],
+                name='Individual %',
+                marker_color='lightblue',
+                yaxis='y'
+            ))
+            
+            # Line chart for cumulative percentage
+            fig_pareto.add_trace(go.Scatter(
+                x=pareto_data.index,
+                y=pareto_data['Cumulative %'],
+                name='Cumulative %',
+                mode='lines+markers',
+                marker_color='red',
+                yaxis='y2',
+                line=dict(width=2)
+            ))
+            
+            # Add 80% reference line
+            fig_pareto.add_hline(y=80, line_dash="dash", line_color="green", 
+                                annotation_text="80% threshold", yref='y2')
+            
+            fig_pareto.update_layout(
+                height=400,
+                xaxis_title="Account Rank",
+                yaxis=dict(title="Individual %", side='left'),
+                yaxis2=dict(title="Cumulative %", overlaying='y', side='right', range=[0, 100]),
+                hovermode='x unified',
+                showlegend=True,
+                legend=dict(x=0.7, y=0.5)
+            )
+            
+            st.plotly_chart(fig_pareto, use_container_width=True)
+            
+            # Show key insight
+            accounts_80 = all_account_costs[all_account_costs['Cumulative %'] <= 80].shape[0]
+            st.info(f"💡 **Pareto Insight**: {accounts_80} accounts ({accounts_80/len(all_account_costs)*100:.1f}%) contribute to 80% of total costs")
+        
+        with col2:
+            st.subheader("📊 Pareto Analysis - TOTAL$ (Invoiced)")
+            
+            # Get all accounts for TOTAL$ Pareto
+            all_account_totals = filtered_df.groupby(['ACCT', 'ACCT NM']).agg({
+                'TOTAL$_EUR': 'sum'
+            }).reset_index()
+            all_account_totals.columns = ['Account', 'Account Name', 'TOTAL
+        
+        # Monthly Trend and Country Analysis
+        col1, col2 = st.columns(2)
+        
+        with col1:
+            st.subheader("📈 Monthly Cost Trend")
+            monthly_data = filtered_df.groupby('Month').agg({
+                'Total cost_EUR': 'sum',
+                'ORD#': 'count'
+            }).reset_index()
+            monthly_data.columns = ['Month', 'Total Cost', 'Orders']
+            
+            fig_trend = go.Figure()
+            fig_trend.add_trace(go.Bar(
+                x=monthly_data['Month'],
+                y=monthly_data['Total Cost'],
+                name='Total Cost',
+                marker_color='#667eea'
+            ))
+            fig_trend.add_trace(go.Scatter(
+                x=monthly_data['Month'],
+                y=monthly_data['Orders'] * (monthly_data['Total Cost'].max() / monthly_data['Orders'].max()),
+                name='Orders (scaled)',
+                yaxis='y2',
+                line=dict(color='#f5576c', width=3)
+            ))
+            fig_trend.update_layout(
+                height=400,
+                xaxis_title="Month",
+                yaxis_title="Total Cost (EUR)",
+                yaxis2=dict(
+                    title="Orders",
+                    overlaying='y',
+                    side='right'
+                ),
+                hovermode='x unified'
+            )
+            st.plotly_chart(fig_trend, use_container_width=True)
+        
+        with col2:
+            st.subheader("🌍 Top 10 Countries by Cost")
+            country_costs = filtered_df.groupby('PU CTRY')['Total cost_EUR'].sum().sort_values(ascending=False).head(10)
+            
+            fig_country = px.bar(
+                x=country_costs.index,
+                y=country_costs.values,
+                color=country_costs.values,
+                color_continuous_scale='Plasma',
+                text=country_costs.values
+            )
+            fig_country.update_traces(texttemplate='€%{text:,.0f}', textposition='outside')
+            fig_country.update_layout(
+                height=400,
+                xaxis_title="Country",
+                yaxis_title="Total Cost (EUR)",
+                showlegend=False
+            )
+            st.plotly_chart(fig_country, use_container_width=True)
+        
+        # Detailed Account Analysis Table
+        st.markdown("---")
+        st.subheader("📋 Accounts with Highest Cost Differences")
+        
+        # Calculate account differences
+        account_diff = filtered_df.groupby(['ACCT', 'ACCT NM']).agg({
+            'Total cost_EUR': 'sum',
+            'NET_EUR': 'sum',
+            'ORD#': 'count'
+        }).reset_index()
+        account_diff.columns = ['Account', 'Account Name', 'Total Cost (EUR)', 'NET (EUR)', 'Orders']
+        account_diff['Difference (EUR)'] = account_diff['NET (EUR)'] - account_diff['Total Cost (EUR)']
+        account_diff['Diff %'] = (account_diff['Difference (EUR)'] / account_diff['Total Cost (EUR)'] * 100).round(2)
+        account_diff = account_diff.sort_values('Difference (EUR)', ascending=False, key=abs)
+        
+        # Format the columns
+        for col in ['Total Cost (EUR)', 'NET (EUR)', 'Difference (EUR)']:
+            account_diff[col] = account_diff[col].apply(lambda x: f"€{x:,.2f}")
+        account_diff['Diff %'] = account_diff['Diff %'].apply(lambda x: f"{x:.1f}%")
+        
+        # Display table with conditional formatting
+        st.dataframe(
+            account_diff.head(15),
+            use_container_width=True,
+            hide_index=True,
+            column_config={
+                "Account": st.column_config.TextColumn("Account", width="small"),
+                "Account Name": st.column_config.TextColumn("Account Name", width="large"),
+                "Orders": st.column_config.NumberColumn("Orders", width="small"),
+            }
+        )
+        
+        # Download processed data
+        st.markdown("---")
+        col1, col2, col3 = st.columns([1, 1, 2])
+        with col1:
+            csv = filtered_df.to_csv(index=False)
+            st.download_button(
+                label="📥 Download Filtered Data (CSV)",
+                data=csv,
+                file_name=f"cost_analysis_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv",
+                mime="text/csv"
+            )
+        
+        with col2:
+            # Summary statistics
+            st.download_button(
+                label="📊 Download Summary Report (CSV)",
+                data=account_diff.to_csv(index=False),
+                file_name=f"account_summary_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv",
+                mime="text/csv"
+            )
+        
+        # Footer
+        st.markdown("---")
+        st.caption(f"Dashboard generated on {datetime.now().strftime('%Y-%m-%d %H:%M:%S')} | Data contains {len(df):,} total records")
+        
+else:
+    # Instructions when no file is uploaded
+    st.info("👆 Please upload your Excel file to begin the analysis")
+    st.markdown("""
+    ### Expected Excel Format:
+    Your Excel file should contain the following columns:
+    - **ORD DT**: Order Date
+    - **ACCT**: Account Number
+    - **ACCT NM**: Account Name
+    - **OFC**: Office
+    - **ORD#**: Order Number
+    - **PU COST**: Pickup Cost
+    - **SHIP COST**: Shipping Cost
+    - **MAN COST**: Manufacturing Cost
+    - **DEL COST**: Delivery Cost
+    - **Total cost**: Total Cost
+    - **NET**: Net Amount
+    - **CURR**: Currency (EUR/GBP/USD/KRW/AUD/SGD)
+    - **INV#**: Invoice Number
+    - **TOTAL$**: Total Amount
+    - **STATUS**: Order Status
+    - **PU CTRY**: Pickup Country
+    
+    ### Currency Conversion:
+    All amounts will be automatically converted to EUR based on the CURR column for each row.
+    Current exchange rates to EUR:
+    - GBP: 1.17
+    - USD: 0.92
+    - KRW: 0.00069
+    - AUD: 0.60
+    - SGD: 0.68
+    """)
+]
+            all_account_totals = all_account_totals[all_account_totals['TOTAL
+        
+        # Monthly Trend and Country Analysis
+        col1, col2 = st.columns(2)
+        
+        with col1:
+            st.subheader("📈 Monthly Cost Trend")
+            monthly_data = filtered_df.groupby('Month').agg({
+                'Total cost_EUR': 'sum',
+                'ORD#': 'count'
+            }).reset_index()
+            monthly_data.columns = ['Month', 'Total Cost', 'Orders']
+            
+            fig_trend = go.Figure()
+            fig_trend.add_trace(go.Bar(
+                x=monthly_data['Month'],
+                y=monthly_data['Total Cost'],
+                name='Total Cost',
+                marker_color='#667eea'
+            ))
+            fig_trend.add_trace(go.Scatter(
+                x=monthly_data['Month'],
+                y=monthly_data['Orders'] * (monthly_data['Total Cost'].max() / monthly_data['Orders'].max()),
+                name='Orders (scaled)',
+                yaxis='y2',
+                line=dict(color='#f5576c', width=3)
+            ))
+            fig_trend.update_layout(
+                height=400,
+                xaxis_title="Month",
+                yaxis_title="Total Cost (EUR)",
+                yaxis2=dict(
+                    title="Orders",
+                    overlaying='y',
+                    side='right'
+                ),
+                hovermode='x unified'
+            )
+            st.plotly_chart(fig_trend, use_container_width=True)
+        
+        with col2:
+            st.subheader("🌍 Top 10 Countries by Cost")
+            country_costs = filtered_df.groupby('PU CTRY')['Total cost_EUR'].sum().sort_values(ascending=False).head(10)
+            
+            fig_country = px.bar(
+                x=country_costs.index,
+                y=country_costs.values,
+                color=country_costs.values,
+                color_continuous_scale='Plasma',
+                text=country_costs.values
+            )
+            fig_country.update_traces(texttemplate='€%{text:,.0f}', textposition='outside')
+            fig_country.update_layout(
+                height=400,
+                xaxis_title="Country",
+                yaxis_title="Total Cost (EUR)",
+                showlegend=False
+            )
+            st.plotly_chart(fig_country, use_container_width=True)
+        
+        # Detailed Account Analysis Table
+        st.markdown("---")
+        st.subheader("📋 Accounts with Highest Cost Differences")
+        
+        # Calculate account differences
+        account_diff = filtered_df.groupby(['ACCT', 'ACCT NM']).agg({
+            'Total cost_EUR': 'sum',
+            'NET_EUR': 'sum',
+            'ORD#': 'count'
+        }).reset_index()
+        account_diff.columns = ['Account', 'Account Name', 'Total Cost (EUR)', 'NET (EUR)', 'Orders']
+        account_diff['Difference (EUR)'] = account_diff['NET (EUR)'] - account_diff['Total Cost (EUR)']
+        account_diff['Diff %'] = (account_diff['Difference (EUR)'] / account_diff['Total Cost (EUR)'] * 100).round(2)
+        account_diff = account_diff.sort_values('Difference (EUR)', ascending=False, key=abs)
+        
+        # Format the columns
+        for col in ['Total Cost (EUR)', 'NET (EUR)', 'Difference (EUR)']:
+            account_diff[col] = account_diff[col].apply(lambda x: f"€{x:,.2f}")
+        account_diff['Diff %'] = account_diff['Diff %'].apply(lambda x: f"{x:.1f}%")
+        
+        # Display table with conditional formatting
+        st.dataframe(
+            account_diff.head(15),
+            use_container_width=True,
+            hide_index=True,
+            column_config={
+                "Account": st.column_config.TextColumn("Account", width="small"),
+                "Account Name": st.column_config.TextColumn("Account Name", width="large"),
+                "Orders": st.column_config.NumberColumn("Orders", width="small"),
+            }
+        )
+        
+        # Download processed data
+        st.markdown("---")
+        col1, col2, col3 = st.columns([1, 1, 2])
+        with col1:
+            csv = filtered_df.to_csv(index=False)
+            st.download_button(
+                label="📥 Download Filtered Data (CSV)",
+                data=csv,
+                file_name=f"cost_analysis_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv",
+                mime="text/csv"
+            )
+        
+        with col2:
+            # Summary statistics
+            st.download_button(
+                label="📊 Download Summary Report (CSV)",
+                data=account_diff.to_csv(index=False),
+                file_name=f"account_summary_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv",
+                mime="text/csv"
+            )
+        
+        # Footer
+        st.markdown("---")
+        st.caption(f"Dashboard generated on {datetime.now().strftime('%Y-%m-%d %H:%M:%S')} | Data contains {len(df):,} total records")
+        
+else:
+    # Instructions when no file is uploaded
+    st.info("👆 Please upload your Excel file to begin the analysis")
+    st.markdown("""
+    ### Expected Excel Format:
+    Your Excel file should contain the following columns:
+    - **ORD DT**: Order Date
+    - **ACCT**: Account Number
+    - **ACCT NM**: Account Name
+    - **OFC**: Office
+    - **ORD#**: Order Number
+    - **PU COST**: Pickup Cost
+    - **SHIP COST**: Shipping Cost
+    - **MAN COST**: Manufacturing Cost
+    - **DEL COST**: Delivery Cost
+    - **Total cost**: Total Cost
+    - **NET**: Net Amount
+    - **CURR**: Currency (EUR/GBP/USD/KRW/AUD/SGD)
+    - **INV#**: Invoice Number
+    - **TOTAL$**: Total Amount
+    - **STATUS**: Order Status
+    - **PU CTRY**: Pickup Country
+    
+    ### Currency Conversion:
+    All amounts will be automatically converted to EUR based on the CURR column for each row.
+    Current exchange rates to EUR:
+    - GBP: 1.17
+    - USD: 0.92
+    - KRW: 0.00069
+    - AUD: 0.60
+    - SGD: 0.68
+    """)
+] > 0]  # Filter out zeros
+            all_account_totals = all_account_totals.sort_values('TOTAL
+        
+        # Monthly Trend and Country Analysis
+        col1, col2 = st.columns(2)
+        
+        with col1:
+            st.subheader("📈 Monthly Cost Trend")
+            monthly_data = filtered_df.groupby('Month').agg({
+                'Total cost_EUR': 'sum',
+                'ORD#': 'count'
+            }).reset_index()
+            monthly_data.columns = ['Month', 'Total Cost', 'Orders']
+            
+            fig_trend = go.Figure()
+            fig_trend.add_trace(go.Bar(
+                x=monthly_data['Month'],
+                y=monthly_data['Total Cost'],
+                name='Total Cost',
+                marker_color='#667eea'
+            ))
+            fig_trend.add_trace(go.Scatter(
+                x=monthly_data['Month'],
+                y=monthly_data['Orders'] * (monthly_data['Total Cost'].max() / monthly_data['Orders'].max()),
+                name='Orders (scaled)',
+                yaxis='y2',
+                line=dict(color='#f5576c', width=3)
+            ))
+            fig_trend.update_layout(
+                height=400,
+                xaxis_title="Month",
+                yaxis_title="Total Cost (EUR)",
+                yaxis2=dict(
+                    title="Orders",
+                    overlaying='y',
+                    side='right'
+                ),
+                hovermode='x unified'
+            )
+            st.plotly_chart(fig_trend, use_container_width=True)
+        
+        with col2:
+            st.subheader("🌍 Top 10 Countries by Cost")
+            country_costs = filtered_df.groupby('PU CTRY')['Total cost_EUR'].sum().sort_values(ascending=False).head(10)
+            
+            fig_country = px.bar(
+                x=country_costs.index,
+                y=country_costs.values,
+                color=country_costs.values,
+                color_continuous_scale='Plasma',
+                text=country_costs.values
+            )
+            fig_country.update_traces(texttemplate='€%{text:,.0f}', textposition='outside')
+            fig_country.update_layout(
+                height=400,
+                xaxis_title="Country",
+                yaxis_title="Total Cost (EUR)",
+                showlegend=False
+            )
+            st.plotly_chart(fig_country, use_container_width=True)
+        
+        # Detailed Account Analysis Table
+        st.markdown("---")
+        st.subheader("📋 Accounts with Highest Cost Differences")
+        
+        # Calculate account differences
+        account_diff = filtered_df.groupby(['ACCT', 'ACCT NM']).agg({
+            'Total cost_EUR': 'sum',
+            'NET_EUR': 'sum',
+            'ORD#': 'count'
+        }).reset_index()
+        account_diff.columns = ['Account', 'Account Name', 'Total Cost (EUR)', 'NET (EUR)', 'Orders']
+        account_diff['Difference (EUR)'] = account_diff['NET (EUR)'] - account_diff['Total Cost (EUR)']
+        account_diff['Diff %'] = (account_diff['Difference (EUR)'] / account_diff['Total Cost (EUR)'] * 100).round(2)
+        account_diff = account_diff.sort_values('Difference (EUR)', ascending=False, key=abs)
+        
+        # Format the columns
+        for col in ['Total Cost (EUR)', 'NET (EUR)', 'Difference (EUR)']:
+            account_diff[col] = account_diff[col].apply(lambda x: f"€{x:,.2f}")
+        account_diff['Diff %'] = account_diff['Diff %'].apply(lambda x: f"{x:.1f}%")
+        
+        # Display table with conditional formatting
+        st.dataframe(
+            account_diff.head(15),
+            use_container_width=True,
+            hide_index=True,
+            column_config={
+                "Account": st.column_config.TextColumn("Account", width="small"),
+                "Account Name": st.column_config.TextColumn("Account Name", width="large"),
+                "Orders": st.column_config.NumberColumn("Orders", width="small"),
+            }
+        )
+        
+        # Download processed data
+        st.markdown("---")
+        col1, col2, col3 = st.columns([1, 1, 2])
+        with col1:
+            csv = filtered_df.to_csv(index=False)
+            st.download_button(
+                label="📥 Download Filtered Data (CSV)",
+                data=csv,
+                file_name=f"cost_analysis_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv",
+                mime="text/csv"
+            )
+        
+        with col2:
+            # Summary statistics
+            st.download_button(
+                label="📊 Download Summary Report (CSV)",
+                data=account_diff.to_csv(index=False),
+                file_name=f"account_summary_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv",
+                mime="text/csv"
+            )
+        
+        # Footer
+        st.markdown("---")
+        st.caption(f"Dashboard generated on {datetime.now().strftime('%Y-%m-%d %H:%M:%S')} | Data contains {len(df):,} total records")
+        
+else:
+    # Instructions when no file is uploaded
+    st.info("👆 Please upload your Excel file to begin the analysis")
+    st.markdown("""
+    ### Expected Excel Format:
+    Your Excel file should contain the following columns:
+    - **ORD DT**: Order Date
+    - **ACCT**: Account Number
+    - **ACCT NM**: Account Name
+    - **OFC**: Office
+    - **ORD#**: Order Number
+    - **PU COST**: Pickup Cost
+    - **SHIP COST**: Shipping Cost
+    - **MAN COST**: Manufacturing Cost
+    - **DEL COST**: Delivery Cost
+    - **Total cost**: Total Cost
+    - **NET**: Net Amount
+    - **CURR**: Currency (EUR/GBP/USD/KRW/AUD/SGD)
+    - **INV#**: Invoice Number
+    - **TOTAL$**: Total Amount
+    - **STATUS**: Order Status
+    - **PU CTRY**: Pickup Country
+    
+    ### Currency Conversion:
+    All amounts will be automatically converted to EUR based on the CURR column for each row.
+    Current exchange rates to EUR:
+    - GBP: 1.17
+    - USD: 0.92
+    - KRW: 0.00069
+    - AUD: 0.60
+    - SGD: 0.68
+    """)
+, ascending=False)
+            
+            # Calculate cumulative percentage
+            all_account_totals['Cumulative Total'] = all_account_totals['TOTAL
+        
+        # Monthly Trend and Country Analysis
+        col1, col2 = st.columns(2)
+        
+        with col1:
+            st.subheader("📈 Monthly Cost Trend")
+            monthly_data = filtered_df.groupby('Month').agg({
+                'Total cost_EUR': 'sum',
+                'ORD#': 'count'
+            }).reset_index()
+            monthly_data.columns = ['Month', 'Total Cost', 'Orders']
+            
+            fig_trend = go.Figure()
+            fig_trend.add_trace(go.Bar(
+                x=monthly_data['Month'],
+                y=monthly_data['Total Cost'],
+                name='Total Cost',
+                marker_color='#667eea'
+            ))
+            fig_trend.add_trace(go.Scatter(
+                x=monthly_data['Month'],
+                y=monthly_data['Orders'] * (monthly_data['Total Cost'].max() / monthly_data['Orders'].max()),
+                name='Orders (scaled)',
+                yaxis='y2',
+                line=dict(color='#f5576c', width=3)
+            ))
+            fig_trend.update_layout(
+                height=400,
+                xaxis_title="Month",
+                yaxis_title="Total Cost (EUR)",
+                yaxis2=dict(
+                    title="Orders",
+                    overlaying='y',
+                    side='right'
+                ),
+                hovermode='x unified'
+            )
+            st.plotly_chart(fig_trend, use_container_width=True)
+        
+        with col2:
+            st.subheader("🌍 Top 10 Countries by Cost")
+            country_costs = filtered_df.groupby('PU CTRY')['Total cost_EUR'].sum().sort_values(ascending=False).head(10)
+            
+            fig_country = px.bar(
+                x=country_costs.index,
+                y=country_costs.values,
+                color=country_costs.values,
+                color_continuous_scale='Plasma',
+                text=country_costs.values
+            )
+            fig_country.update_traces(texttemplate='€%{text:,.0f}', textposition='outside')
+            fig_country.update_layout(
+                height=400,
+                xaxis_title="Country",
+                yaxis_title="Total Cost (EUR)",
+                showlegend=False
+            )
+            st.plotly_chart(fig_country, use_container_width=True)
+        
+        # Detailed Account Analysis Table
+        st.markdown("---")
+        st.subheader("📋 Accounts with Highest Cost Differences")
+        
+        # Calculate account differences
+        account_diff = filtered_df.groupby(['ACCT', 'ACCT NM']).agg({
+            'Total cost_EUR': 'sum',
+            'NET_EUR': 'sum',
+            'ORD#': 'count'
+        }).reset_index()
+        account_diff.columns = ['Account', 'Account Name', 'Total Cost (EUR)', 'NET (EUR)', 'Orders']
+        account_diff['Difference (EUR)'] = account_diff['NET (EUR)'] - account_diff['Total Cost (EUR)']
+        account_diff['Diff %'] = (account_diff['Difference (EUR)'] / account_diff['Total Cost (EUR)'] * 100).round(2)
+        account_diff = account_diff.sort_values('Difference (EUR)', ascending=False, key=abs)
+        
+        # Format the columns
+        for col in ['Total Cost (EUR)', 'NET (EUR)', 'Difference (EUR)']:
+            account_diff[col] = account_diff[col].apply(lambda x: f"€{x:,.2f}")
+        account_diff['Diff %'] = account_diff['Diff %'].apply(lambda x: f"{x:.1f}%")
+        
+        # Display table with conditional formatting
+        st.dataframe(
+            account_diff.head(15),
+            use_container_width=True,
+            hide_index=True,
+            column_config={
+                "Account": st.column_config.TextColumn("Account", width="small"),
+                "Account Name": st.column_config.TextColumn("Account Name", width="large"),
+                "Orders": st.column_config.NumberColumn("Orders", width="small"),
+            }
+        )
+        
+        # Download processed data
+        st.markdown("---")
+        col1, col2, col3 = st.columns([1, 1, 2])
+        with col1:
+            csv = filtered_df.to_csv(index=False)
+            st.download_button(
+                label="📥 Download Filtered Data (CSV)",
+                data=csv,
+                file_name=f"cost_analysis_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv",
+                mime="text/csv"
+            )
+        
+        with col2:
+            # Summary statistics
+            st.download_button(
+                label="📊 Download Summary Report (CSV)",
+                data=account_diff.to_csv(index=False),
+                file_name=f"account_summary_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv",
+                mime="text/csv"
+            )
+        
+        # Footer
+        st.markdown("---")
+        st.caption(f"Dashboard generated on {datetime.now().strftime('%Y-%m-%d %H:%M:%S')} | Data contains {len(df):,} total records")
+        
+else:
+    # Instructions when no file is uploaded
+    st.info("👆 Please upload your Excel file to begin the analysis")
+    st.markdown("""
+    ### Expected Excel Format:
+    Your Excel file should contain the following columns:
+    - **ORD DT**: Order Date
+    - **ACCT**: Account Number
+    - **ACCT NM**: Account Name
+    - **OFC**: Office
+    - **ORD#**: Order Number
+    - **PU COST**: Pickup Cost
+    - **SHIP COST**: Shipping Cost
+    - **MAN COST**: Manufacturing Cost
+    - **DEL COST**: Delivery Cost
+    - **Total cost**: Total Cost
+    - **NET**: Net Amount
+    - **CURR**: Currency (EUR/GBP/USD/KRW/AUD/SGD)
+    - **INV#**: Invoice Number
+    - **TOTAL$**: Total Amount
+    - **STATUS**: Order Status
+    - **PU CTRY**: Pickup Country
+    
+    ### Currency Conversion:
+    All amounts will be automatically converted to EUR based on the CURR column for each row.
+    Current exchange rates to EUR:
+    - GBP: 1.17
+    - USD: 0.92
+    - KRW: 0.00069
+    - AUD: 0.60
+    - SGD: 0.68
+    """)
+].cumsum()
+            all_account_totals['Cumulative %'] = (all_account_totals['Cumulative Total'] / all_account_totals['TOTAL
+        
+        # Monthly Trend and Country Analysis
+        col1, col2 = st.columns(2)
+        
+        with col1:
+            st.subheader("📈 Monthly Cost Trend")
+            monthly_data = filtered_df.groupby('Month').agg({
+                'Total cost_EUR': 'sum',
+                'ORD#': 'count'
+            }).reset_index()
+            monthly_data.columns = ['Month', 'Total Cost', 'Orders']
+            
+            fig_trend = go.Figure()
+            fig_trend.add_trace(go.Bar(
+                x=monthly_data['Month'],
+                y=monthly_data['Total Cost'],
+                name='Total Cost',
+                marker_color='#667eea'
+            ))
+            fig_trend.add_trace(go.Scatter(
+                x=monthly_data['Month'],
+                y=monthly_data['Orders'] * (monthly_data['Total Cost'].max() / monthly_data['Orders'].max()),
+                name='Orders (scaled)',
+                yaxis='y2',
+                line=dict(color='#f5576c', width=3)
+            ))
+            fig_trend.update_layout(
+                height=400,
+                xaxis_title="Month",
+                yaxis_title="Total Cost (EUR)",
+                yaxis2=dict(
+                    title="Orders",
+                    overlaying='y',
+                    side='right'
+                ),
+                hovermode='x unified'
+            )
+            st.plotly_chart(fig_trend, use_container_width=True)
+        
+        with col2:
+            st.subheader("🌍 Top 10 Countries by Cost")
+            country_costs = filtered_df.groupby('PU CTRY')['Total cost_EUR'].sum().sort_values(ascending=False).head(10)
+            
+            fig_country = px.bar(
+                x=country_costs.index,
+                y=country_costs.values,
+                color=country_costs.values,
+                color_continuous_scale='Plasma',
+                text=country_costs.values
+            )
+            fig_country.update_traces(texttemplate='€%{text:,.0f}', textposition='outside')
+            fig_country.update_layout(
+                height=400,
+                xaxis_title="Country",
+                yaxis_title="Total Cost (EUR)",
+                showlegend=False
+            )
+            st.plotly_chart(fig_country, use_container_width=True)
+        
+        # Detailed Account Analysis Table
+        st.markdown("---")
+        st.subheader("📋 Accounts with Highest Cost Differences")
+        
+        # Calculate account differences
+        account_diff = filtered_df.groupby(['ACCT', 'ACCT NM']).agg({
+            'Total cost_EUR': 'sum',
+            'NET_EUR': 'sum',
+            'ORD#': 'count'
+        }).reset_index()
+        account_diff.columns = ['Account', 'Account Name', 'Total Cost (EUR)', 'NET (EUR)', 'Orders']
+        account_diff['Difference (EUR)'] = account_diff['NET (EUR)'] - account_diff['Total Cost (EUR)']
+        account_diff['Diff %'] = (account_diff['Difference (EUR)'] / account_diff['Total Cost (EUR)'] * 100).round(2)
+        account_diff = account_diff.sort_values('Difference (EUR)', ascending=False, key=abs)
+        
+        # Format the columns
+        for col in ['Total Cost (EUR)', 'NET (EUR)', 'Difference (EUR)']:
+            account_diff[col] = account_diff[col].apply(lambda x: f"€{x:,.2f}")
+        account_diff['Diff %'] = account_diff['Diff %'].apply(lambda x: f"{x:.1f}%")
+        
+        # Display table with conditional formatting
+        st.dataframe(
+            account_diff.head(15),
+            use_container_width=True,
+            hide_index=True,
+            column_config={
+                "Account": st.column_config.TextColumn("Account", width="small"),
+                "Account Name": st.column_config.TextColumn("Account Name", width="large"),
+                "Orders": st.column_config.NumberColumn("Orders", width="small"),
+            }
+        )
+        
+        # Download processed data
+        st.markdown("---")
+        col1, col2, col3 = st.columns([1, 1, 2])
+        with col1:
+            csv = filtered_df.to_csv(index=False)
+            st.download_button(
+                label="📥 Download Filtered Data (CSV)",
+                data=csv,
+                file_name=f"cost_analysis_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv",
+                mime="text/csv"
+            )
+        
+        with col2:
+            # Summary statistics
+            st.download_button(
+                label="📊 Download Summary Report (CSV)",
+                data=account_diff.to_csv(index=False),
+                file_name=f"account_summary_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv",
+                mime="text/csv"
+            )
+        
+        # Footer
+        st.markdown("---")
+        st.caption(f"Dashboard generated on {datetime.now().strftime('%Y-%m-%d %H:%M:%S')} | Data contains {len(df):,} total records")
+        
+else:
+    # Instructions when no file is uploaded
+    st.info("👆 Please upload your Excel file to begin the analysis")
+    st.markdown("""
+    ### Expected Excel Format:
+    Your Excel file should contain the following columns:
+    - **ORD DT**: Order Date
+    - **ACCT**: Account Number
+    - **ACCT NM**: Account Name
+    - **OFC**: Office
+    - **ORD#**: Order Number
+    - **PU COST**: Pickup Cost
+    - **SHIP COST**: Shipping Cost
+    - **MAN COST**: Manufacturing Cost
+    - **DEL COST**: Delivery Cost
+    - **Total cost**: Total Cost
+    - **NET**: Net Amount
+    - **CURR**: Currency (EUR/GBP/USD/KRW/AUD/SGD)
+    - **INV#**: Invoice Number
+    - **TOTAL$**: Total Amount
+    - **STATUS**: Order Status
+    - **PU CTRY**: Pickup Country
+    
+    ### Currency Conversion:
+    All amounts will be automatically converted to EUR based on the CURR column for each row.
+    Current exchange rates to EUR:
+    - GBP: 1.17
+    - USD: 0.92
+    - KRW: 0.00069
+    - AUD: 0.60
+    - SGD: 0.68
+    """)
+].sum() * 100).round(1)
+            all_account_totals['Individual %'] = (all_account_totals['TOTAL
+        
+        # Monthly Trend and Country Analysis
+        col1, col2 = st.columns(2)
+        
+        with col1:
+            st.subheader("📈 Monthly Cost Trend")
+            monthly_data = filtered_df.groupby('Month').agg({
+                'Total cost_EUR': 'sum',
+                'ORD#': 'count'
+            }).reset_index()
+            monthly_data.columns = ['Month', 'Total Cost', 'Orders']
+            
+            fig_trend = go.Figure()
+            fig_trend.add_trace(go.Bar(
+                x=monthly_data['Month'],
+                y=monthly_data['Total Cost'],
+                name='Total Cost',
+                marker_color='#667eea'
+            ))
+            fig_trend.add_trace(go.Scatter(
+                x=monthly_data['Month'],
+                y=monthly_data['Orders'] * (monthly_data['Total Cost'].max() / monthly_data['Orders'].max()),
+                name='Orders (scaled)',
+                yaxis='y2',
+                line=dict(color='#f5576c', width=3)
+            ))
+            fig_trend.update_layout(
+                height=400,
+                xaxis_title="Month",
+                yaxis_title="Total Cost (EUR)",
+                yaxis2=dict(
+                    title="Orders",
+                    overlaying='y',
+                    side='right'
+                ),
+                hovermode='x unified'
+            )
+            st.plotly_chart(fig_trend, use_container_width=True)
+        
+        with col2:
+            st.subheader("🌍 Top 10 Countries by Cost")
+            country_costs = filtered_df.groupby('PU CTRY')['Total cost_EUR'].sum().sort_values(ascending=False).head(10)
+            
+            fig_country = px.bar(
+                x=country_costs.index,
+                y=country_costs.values,
+                color=country_costs.values,
+                color_continuous_scale='Plasma',
+                text=country_costs.values
+            )
+            fig_country.update_traces(texttemplate='€%{text:,.0f}', textposition='outside')
+            fig_country.update_layout(
+                height=400,
+                xaxis_title="Country",
+                yaxis_title="Total Cost (EUR)",
+                showlegend=False
+            )
+            st.plotly_chart(fig_country, use_container_width=True)
+        
+        # Detailed Account Analysis Table
+        st.markdown("---")
+        st.subheader("📋 Accounts with Highest Cost Differences")
+        
+        # Calculate account differences
+        account_diff = filtered_df.groupby(['ACCT', 'ACCT NM']).agg({
+            'Total cost_EUR': 'sum',
+            'NET_EUR': 'sum',
+            'ORD#': 'count'
+        }).reset_index()
+        account_diff.columns = ['Account', 'Account Name', 'Total Cost (EUR)', 'NET (EUR)', 'Orders']
+        account_diff['Difference (EUR)'] = account_diff['NET (EUR)'] - account_diff['Total Cost (EUR)']
+        account_diff['Diff %'] = (account_diff['Difference (EUR)'] / account_diff['Total Cost (EUR)'] * 100).round(2)
+        account_diff = account_diff.sort_values('Difference (EUR)', ascending=False, key=abs)
+        
+        # Format the columns
+        for col in ['Total Cost (EUR)', 'NET (EUR)', 'Difference (EUR)']:
+            account_diff[col] = account_diff[col].apply(lambda x: f"€{x:,.2f}")
+        account_diff['Diff %'] = account_diff['Diff %'].apply(lambda x: f"{x:.1f}%")
+        
+        # Display table with conditional formatting
+        st.dataframe(
+            account_diff.head(15),
+            use_container_width=True,
+            hide_index=True,
+            column_config={
+                "Account": st.column_config.TextColumn("Account", width="small"),
+                "Account Name": st.column_config.TextColumn("Account Name", width="large"),
+                "Orders": st.column_config.NumberColumn("Orders", width="small"),
+            }
+        )
+        
+        # Download processed data
+        st.markdown("---")
+        col1, col2, col3 = st.columns([1, 1, 2])
+        with col1:
+            csv = filtered_df.to_csv(index=False)
+            st.download_button(
+                label="📥 Download Filtered Data (CSV)",
+                data=csv,
+                file_name=f"cost_analysis_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv",
+                mime="text/csv"
+            )
+        
+        with col2:
+            # Summary statistics
+            st.download_button(
+                label="📊 Download Summary Report (CSV)",
+                data=account_diff.to_csv(index=False),
+                file_name=f"account_summary_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv",
+                mime="text/csv"
+            )
+        
+        # Footer
+        st.markdown("---")
+        st.caption(f"Dashboard generated on {datetime.now().strftime('%Y-%m-%d %H:%M:%S')} | Data contains {len(df):,} total records")
+        
+else:
+    # Instructions when no file is uploaded
+    st.info("👆 Please upload your Excel file to begin the analysis")
+    st.markdown("""
+    ### Expected Excel Format:
+    Your Excel file should contain the following columns:
+    - **ORD DT**: Order Date
+    - **ACCT**: Account Number
+    - **ACCT NM**: Account Name
+    - **OFC**: Office
+    - **ORD#**: Order Number
+    - **PU COST**: Pickup Cost
+    - **SHIP COST**: Shipping Cost
+    - **MAN COST**: Manufacturing Cost
+    - **DEL COST**: Delivery Cost
+    - **Total cost**: Total Cost
+    - **NET**: Net Amount
+    - **CURR**: Currency (EUR/GBP/USD/KRW/AUD/SGD)
+    - **INV#**: Invoice Number
+    - **TOTAL$**: Total Amount
+    - **STATUS**: Order Status
+    - **PU CTRY**: Pickup Country
+    
+    ### Currency Conversion:
+    All amounts will be automatically converted to EUR based on the CURR column for each row.
+    Current exchange rates to EUR:
+    - GBP: 1.17
+    - USD: 0.92
+    - KRW: 0.00069
+    - AUD: 0.60
+    - SGD: 0.68
+    """)
+] / all_account_totals['TOTAL
+        
+        # Monthly Trend and Country Analysis
+        col1, col2 = st.columns(2)
+        
+        with col1:
+            st.subheader("📈 Monthly Cost Trend")
+            monthly_data = filtered_df.groupby('Month').agg({
+                'Total cost_EUR': 'sum',
+                'ORD#': 'count'
+            }).reset_index()
+            monthly_data.columns = ['Month', 'Total Cost', 'Orders']
+            
+            fig_trend = go.Figure()
+            fig_trend.add_trace(go.Bar(
+                x=monthly_data['Month'],
+                y=monthly_data['Total Cost'],
+                name='Total Cost',
+                marker_color='#667eea'
+            ))
+            fig_trend.add_trace(go.Scatter(
+                x=monthly_data['Month'],
+                y=monthly_data['Orders'] * (monthly_data['Total Cost'].max() / monthly_data['Orders'].max()),
+                name='Orders (scaled)',
+                yaxis='y2',
+                line=dict(color='#f5576c', width=3)
+            ))
+            fig_trend.update_layout(
+                height=400,
+                xaxis_title="Month",
+                yaxis_title="Total Cost (EUR)",
+                yaxis2=dict(
+                    title="Orders",
+                    overlaying='y',
+                    side='right'
+                ),
+                hovermode='x unified'
+            )
+            st.plotly_chart(fig_trend, use_container_width=True)
+        
+        with col2:
+            st.subheader("🌍 Top 10 Countries by Cost")
+            country_costs = filtered_df.groupby('PU CTRY')['Total cost_EUR'].sum().sort_values(ascending=False).head(10)
+            
+            fig_country = px.bar(
+                x=country_costs.index,
+                y=country_costs.values,
+                color=country_costs.values,
+                color_continuous_scale='Plasma',
+                text=country_costs.values
+            )
+            fig_country.update_traces(texttemplate='€%{text:,.0f}', textposition='outside')
+            fig_country.update_layout(
+                height=400,
+                xaxis_title="Country",
+                yaxis_title="Total Cost (EUR)",
+                showlegend=False
+            )
+            st.plotly_chart(fig_country, use_container_width=True)
+        
+        # Detailed Account Analysis Table
+        st.markdown("---")
+        st.subheader("📋 Accounts with Highest Cost Differences")
+        
+        # Calculate account differences
+        account_diff = filtered_df.groupby(['ACCT', 'ACCT NM']).agg({
+            'Total cost_EUR': 'sum',
+            'NET_EUR': 'sum',
+            'ORD#': 'count'
+        }).reset_index()
+        account_diff.columns = ['Account', 'Account Name', 'Total Cost (EUR)', 'NET (EUR)', 'Orders']
+        account_diff['Difference (EUR)'] = account_diff['NET (EUR)'] - account_diff['Total Cost (EUR)']
+        account_diff['Diff %'] = (account_diff['Difference (EUR)'] / account_diff['Total Cost (EUR)'] * 100).round(2)
+        account_diff = account_diff.sort_values('Difference (EUR)', ascending=False, key=abs)
+        
+        # Format the columns
+        for col in ['Total Cost (EUR)', 'NET (EUR)', 'Difference (EUR)']:
+            account_diff[col] = account_diff[col].apply(lambda x: f"€{x:,.2f}")
+        account_diff['Diff %'] = account_diff['Diff %'].apply(lambda x: f"{x:.1f}%")
+        
+        # Display table with conditional formatting
+        st.dataframe(
+            account_diff.head(15),
+            use_container_width=True,
+            hide_index=True,
+            column_config={
+                "Account": st.column_config.TextColumn("Account", width="small"),
+                "Account Name": st.column_config.TextColumn("Account Name", width="large"),
+                "Orders": st.column_config.NumberColumn("Orders", width="small"),
+            }
+        )
+        
+        # Download processed data
+        st.markdown("---")
+        col1, col2, col3 = st.columns([1, 1, 2])
+        with col1:
+            csv = filtered_df.to_csv(index=False)
+            st.download_button(
+                label="📥 Download Filtered Data (CSV)",
+                data=csv,
+                file_name=f"cost_analysis_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv",
+                mime="text/csv"
+            )
+        
+        with col2:
+            # Summary statistics
+            st.download_button(
+                label="📊 Download Summary Report (CSV)",
+                data=account_diff.to_csv(index=False),
+                file_name=f"account_summary_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv",
+                mime="text/csv"
+            )
+        
+        # Footer
+        st.markdown("---")
+        st.caption(f"Dashboard generated on {datetime.now().strftime('%Y-%m-%d %H:%M:%S')} | Data contains {len(df):,} total records")
+        
+else:
+    # Instructions when no file is uploaded
+    st.info("👆 Please upload your Excel file to begin the analysis")
+    st.markdown("""
+    ### Expected Excel Format:
+    Your Excel file should contain the following columns:
+    - **ORD DT**: Order Date
+    - **ACCT**: Account Number
+    - **ACCT NM**: Account Name
+    - **OFC**: Office
+    - **ORD#**: Order Number
+    - **PU COST**: Pickup Cost
+    - **SHIP COST**: Shipping Cost
+    - **MAN COST**: Manufacturing Cost
+    - **DEL COST**: Delivery Cost
+    - **Total cost**: Total Cost
+    - **NET**: Net Amount
+    - **CURR**: Currency (EUR/GBP/USD/KRW/AUD/SGD)
+    - **INV#**: Invoice Number
+    - **TOTAL$**: Total Amount
+    - **STATUS**: Order Status
+    - **PU CTRY**: Pickup Country
+    
+    ### Currency Conversion:
+    All amounts will be automatically converted to EUR based on the CURR column for each row.
+    Current exchange rates to EUR:
+    - GBP: 1.17
+    - USD: 0.92
+    - KRW: 0.00069
+    - AUD: 0.60
+    - SGD: 0.68
+    """)
+].sum() * 100).round(1)
+            
+            # Take top 20 for visibility
+            pareto_total = all_account_totals.head(20)
+            
+            # Create Pareto chart for TOTAL$
+            fig_pareto_total = go.Figure()
+            
+            # Bar chart for individual percentages
+            fig_pareto_total.add_trace(go.Bar(
+                x=pareto_total.index,
+                y=pareto_total['Individual %'],
+                name='Individual %',
+                marker_color='lightgreen',
+                yaxis='y'
+            ))
+            
+            # Line chart for cumulative percentage
+            fig_pareto_total.add_trace(go.Scatter(
+                x=pareto_total.index,
+                y=pareto_total['Cumulative %'],
+                name='Cumulative %',
+                mode='lines+markers',
+                marker_color='red',
+                yaxis='y2',
+                line=dict(width=2)
+            ))
+            
+            # Add 80% reference line
+            fig_pareto_total.add_hline(y=80, line_dash="dash", line_color="green", 
+                                      annotation_text="80% threshold", yref='y2')
+            
+            fig_pareto_total.update_layout(
+                height=400,
+                xaxis_title="Account Rank",
+                yaxis=dict(title="Individual %", side='left'),
+                yaxis2=dict(title="Cumulative %", overlaying='y', side='right', range=[0, 100]),
+                hovermode='x unified',
+                showlegend=True,
+                legend=dict(x=0.7, y=0.5)
+            )
+            
+            st.plotly_chart(fig_pareto_total, use_container_width=True)
+            
+            # Show key insight
+            if len(all_account_totals) > 0:
+                accounts_80_total = all_account_totals[all_account_totals['Cumulative %'] <= 80].shape[0]
+                st.info(f"💡 **Pareto Insight**: {accounts_80_total} accounts ({accounts_80_total/len(all_account_totals)*100:.1f}%) contribute to 80% of invoiced amounts")
         
         # Monthly Trend and Country Analysis
         col1, col2 = st.columns(2)
