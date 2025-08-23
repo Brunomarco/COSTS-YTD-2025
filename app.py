@@ -2,8 +2,6 @@ import streamlit as st
 import pandas as pd
 import plotly.express as px
 import plotly.graph_objects as go
-from plotly.subplots import make_subplots
-import numpy as np
 from datetime import datetime
 
 # Page configuration
@@ -14,25 +12,14 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
-# Custom CSS for better styling
+# Reduce Plotly default height to speed up rendering
+px.defaults.height = 400
+
+# Custom CSS for better styling (simplified for performance)
 st.markdown("""
     <style>
-    .main {
-        padding: 0rem 1rem;
-    }
-    .metric-card {
-        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-        padding: 1.5rem;
-        border-radius: 10px;
-        color: white;
-    }
-    h1 {
-        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-        -webkit-background-clip: text;
-        -webkit-text-fill-color: transparent;
-        font-size: 3rem;
-        font-weight: bold;
-    }
+    .main {padding: 0rem 1rem;}
+    h1 {color: #667eea; font-size: 2.5rem; font-weight: bold;}
     </style>
 """, unsafe_allow_html=True)
 
@@ -116,15 +103,6 @@ if uploaded_file is not None:
             help="Leave empty to show all accounts"
         )
         
-        # Status filter
-        all_statuses = df['STATUS'].dropna().unique()
-        selected_statuses = st.sidebar.multiselect(
-            "Select Status",
-            options=all_statuses,
-            default=None,
-            help="Leave empty to show all statuses"
-        )
-        
         # Country filter
         all_countries = df['PU CTRY'].dropna().unique()
         selected_countries = st.sidebar.multiselect(
@@ -134,12 +112,12 @@ if uploaded_file is not None:
             help="Leave empty to show all countries"
         )
         
-        # Apply filters
+        st.sidebar.info("📌 Only showing orders with status: 440-BILLED")
+        
+        # Apply filters (but don't filter by status since we already filtered for 440-BILLED)
         filtered_df = df.copy()
         if selected_accounts:
             filtered_df = filtered_df[filtered_df['ACCT NM'].isin(selected_accounts)]
-        if selected_statuses:
-            filtered_df = filtered_df[filtered_df['STATUS'].isin(selected_statuses)]
         if selected_countries:
             filtered_df = filtered_df[filtered_df['PU CTRY'].isin(selected_countries)]
         
@@ -149,9 +127,9 @@ if uploaded_file is not None:
         with col1:
             total_orders = len(filtered_df)
             st.metric(
-                label="📦 Total Orders",
+                label="📦 Total Billed Orders",
                 value=f"{total_orders:,}",
-                delta=f"{len(filtered_df[filtered_df['STATUS'] == '440-BILLED']):,} Billed"
+                delta=f"All orders shown are 440-BILLED"
             )
         
         with col2:
@@ -207,24 +185,32 @@ if uploaded_file is not None:
             st.plotly_chart(fig_pie, use_container_width=True)
         
         with col2:
-            # Order Status Distribution
-            st.subheader("📊 Order Status Distribution")
-            status_counts = filtered_df['STATUS'].value_counts().head(8)
+            # Order Status Distribution - removed since we're only showing 440-BILLED
+            st.subheader("📊 Cost Types Distribution")
             
-            fig_status = px.bar(
-                x=status_counts.values,
-                y=status_counts.index,
+            # Show distribution of which cost types are present
+            cost_presence = {
+                'PU Cost': (filtered_df['PU COST_EUR'] > 0).sum(),
+                'Ship Cost': (filtered_df['SHIP COST_EUR'] > 0).sum(),
+                'Man Cost': (filtered_df['MAN COST_EUR'] > 0).sum(),
+                'Del Cost': (filtered_df['DEL COST_EUR'] > 0).sum()
+            }
+            
+            fig_cost_presence = px.bar(
+                x=list(cost_presence.values()),
+                y=list(cost_presence.keys()),
                 orientation='h',
-                color=status_counts.values,
-                color_continuous_scale='Viridis'
+                color=list(cost_presence.values()),
+                color_continuous_scale='Viridis',
+                labels={'x': 'Number of Orders', 'y': 'Cost Type'}
             )
-            fig_status.update_layout(
+            fig_cost_presence.update_layout(
                 height=400,
                 showlegend=False,
-                xaxis_title="Number of Orders",
-                yaxis_title="Status"
+                xaxis_title="Number of Orders with this Cost Type",
+                yaxis_title=""
             )
-            st.plotly_chart(fig_status, use_container_width=True)
+            st.plotly_chart(fig_cost_presence, use_container_width=True)
         
         # Top Accounts by Cost
         st.markdown("---")
