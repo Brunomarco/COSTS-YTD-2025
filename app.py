@@ -243,36 +243,41 @@ if uploaded_file is not None:
             st.plotly_chart(fig_pie, use_container_width=True)
         
         with col2:
-            # Order Status Distribution - removed since we're only showing 440-BILLED
-            st.subheader("📊 Cost Types Distribution")
+            # CHANGED: Total Cost by Type (instead of count)
+            st.subheader("📊 Total Cost by Type (EUR)")
             
-            # Show distribution of which cost types are present
-            cost_presence = {
-                'PU Cost': (filtered_df['PU COST_EUR'] > 0).sum(),
-                'Ship Cost': (filtered_df['SHIP COST_EUR'] > 0).sum(),
-                'Man Cost': (filtered_df['MAN COST_EUR'] > 0).sum(),
-                'Del Cost': (filtered_df['DEL COST_EUR'] > 0).sum()
+            # Calculate total costs for each type
+            cost_totals = {
+                'PU Cost': filtered_df['PU COST_EUR'].sum(),
+                'Ship Cost': filtered_df['SHIP COST_EUR'].sum(),
+                'Man Cost': filtered_df['MAN COST_EUR'].sum(),
+                'Del Cost': filtered_df['DEL COST_EUR'].sum()
             }
             
-            fig_cost_presence = px.bar(
-                x=list(cost_presence.values()),
-                y=list(cost_presence.keys()),
+            # Sort by value descending
+            sorted_costs = dict(sorted(cost_totals.items(), key=lambda x: x[1], reverse=True))
+            
+            fig_cost_totals = px.bar(
+                x=list(sorted_costs.values()),
+                y=list(sorted_costs.keys()),
                 orientation='h',
-                color=list(cost_presence.values()),
+                color=list(sorted_costs.values()),
                 color_continuous_scale='Viridis',
-                labels={'x': 'Number of Orders', 'y': 'Cost Type'}
+                text=[f'€{v:,.0f}' for v in sorted_costs.values()]
             )
-            fig_cost_presence.update_layout(
+            fig_cost_totals.update_traces(textposition='outside')
+            fig_cost_totals.update_layout(
                 height=400,
                 showlegend=False,
-                xaxis_title="Number of Orders with this Cost Type",
-                yaxis_title=""
+                xaxis_title="Total Amount (EUR)",
+                yaxis_title="Cost Type",
+                xaxis=dict(tickformat=',.0f')
             )
-            st.plotly_chart(fig_cost_presence, use_container_width=True)
+            st.plotly_chart(fig_cost_totals, use_container_width=True)
         
-        # Top Accounts by Cost
+        # Top Accounts by Cost - Ensuring descending order
         st.markdown("---")
-        st.subheader("🏆 Top 10 Accounts by Total Cost")
+        st.subheader("🏆 Top 10 Accounts by Total Cost (Descending)")
         
         account_costs = filtered_df.groupby(['ACCT', 'ACCT NM']).agg({
             'Total cost_EUR': 'sum',
@@ -281,7 +286,12 @@ if uploaded_file is not None:
         }).reset_index()
         account_costs.columns = ['Account', 'Account Name', 'Total Cost', 'NET', 'Orders']
         account_costs['Difference'] = account_costs['NET'] - account_costs['Total Cost']
+        # Explicitly sort in descending order
         account_costs = account_costs.sort_values('Total Cost', ascending=False).head(10)
+        
+        # Calculate percentage for better insights
+        total_sum = account_costs['Total Cost'].sum()
+        account_costs['Percentage'] = (account_costs['Total Cost'] / total_sum * 100).round(1)
         
         fig_top = px.bar(
             account_costs,
@@ -290,15 +300,25 @@ if uploaded_file is not None:
             orientation='h',
             color='Total Cost',
             color_continuous_scale='Blues',
-            text='Total Cost'
+            text='Total Cost',
+            hover_data=['Percentage', 'Orders', 'Difference']
         )
-        fig_top.update_traces(texttemplate='€%{text:,.0f}', textposition='outside')
+        fig_top.update_traces(
+            texttemplate='€%{text:,.0f}', 
+            textposition='inside',
+            textfont_size=10,
+            insidetextanchor='middle'
+        )
         fig_top.update_layout(
             height=500,
             xaxis_title="Total Cost (EUR)",
             yaxis_title="",
-            showlegend=False
+            showlegend=False,
+            margin=dict(r=120),  # Add right margin
+            xaxis=dict(range=[0, account_costs['Total Cost'].max() * 1.2])  # Extend x-axis
         )
+        # Reverse y-axis to show highest at top
+        fig_top.update_yaxes(autorange='reversed')
         st.plotly_chart(fig_top, use_container_width=True)
         
         # Monthly Trend and Country Analysis
@@ -359,35 +379,180 @@ if uploaded_file is not None:
             )
             st.plotly_chart(fig_country, use_container_width=True)
         
-        # Detailed Account Analysis Table
+        # EXPANDED: Detailed Account Analysis Section
         st.markdown("---")
-        st.subheader("📋 Accounts with Highest Cost Differences")
+        st.subheader("📋 Account Cost Analysis & Differences")
         
         # Calculate account differences
         account_diff = filtered_df.groupby(['ACCT', 'ACCT NM']).agg({
             'Total cost_EUR': 'sum',
             'NET_EUR': 'sum',
-            'ORD#': 'count'
+            'ORD#': 'count',
+            'TOTAL$_EUR': 'sum'
         }).reset_index()
-        account_diff.columns = ['Account', 'Account Name', 'Total Cost (EUR)', 'NET (EUR)', 'Orders']
-        account_diff['Difference (EUR)'] = account_diff['NET (EUR)'] - account_diff['Total Cost (EUR)']
-        account_diff['Diff %'] = (account_diff['Difference (EUR)'] / account_diff['Total Cost (EUR)'] * 100).round(2)
-        account_diff = account_diff.sort_values('Difference (EUR)', ascending=False, key=abs)
+        account_diff.columns = ['Account', 'Account Name', 'Total Cost', 'NET', 'Orders', 'Total Invoiced']
+        account_diff['Difference'] = account_diff['NET'] - account_diff['Total Cost']
+        account_diff['Margin %'] = ((account_diff['NET'] - account_diff['Total Cost']) / account_diff['Total Cost'] * 100).round(2)
         
-        # Format the columns
-        for col in ['Total Cost (EUR)', 'NET (EUR)', 'Difference (EUR)']:
-            account_diff[col] = account_diff[col].apply(lambda x: f"€{x:,.2f}")
-        account_diff['Diff %'] = account_diff['Diff %'].apply(lambda x: f"{x:.1f}%")
+        # Create visualizations for the differences
+        col1, col2 = st.columns(2)
+        
+        with col1:
+            st.markdown("#### 📊 Top 10 Accounts by Margin (NET - Cost)")
+            top_margins = account_diff.nlargest(10, 'Difference')
+            
+            fig_margin = px.bar(
+                top_margins,
+                x='Difference',
+                y='Account Name',
+                orientation='h',
+                color='Difference',
+                color_continuous_scale='RdYlGn',
+                text='Difference',
+                hover_data=['Total Cost', 'NET', 'Margin %']
+            )
+            fig_margin.update_traces(texttemplate='€%{text:,.0f}', textposition='outside')
+            fig_margin.update_layout(
+                height=400,
+                xaxis_title="Margin (EUR)",
+                yaxis_title="",
+                showlegend=False
+            )
+            fig_margin.update_yaxes(autorange='reversed')
+            st.plotly_chart(fig_margin, use_container_width=True)
+        
+        with col2:
+            st.markdown("#### 📈 Margin Percentage Distribution")
+            # Filter out infinite margins (where cost is 0)
+            margin_data = account_diff[account_diff['Total Cost'] > 0].copy()
+            
+            fig_margin_pct = px.scatter(
+                margin_data,
+                x='Total Cost',
+                y='Margin %',
+                size='Orders',
+                color='Margin %',
+                color_continuous_scale='RdYlGn',
+                hover_data=['Account Name', 'NET', 'Orders'],
+                title="Margin % vs Total Cost"
+            )
+            fig_margin_pct.update_layout(
+                height=400,
+                xaxis_title="Total Cost (EUR)",
+                yaxis_title="Margin %",
+                xaxis_type="log"  # Log scale for better visualization
+            )
+            # Add reference line at 0% margin
+            fig_margin_pct.add_hline(y=0, line_dash="dash", line_color="gray", annotation_text="Break-even")
+            st.plotly_chart(fig_margin_pct, use_container_width=True)
+        
+        # Additional analysis charts
+        col3, col4 = st.columns(2)
+        
+        with col3:
+            st.markdown("#### 🎯 Cost vs NET Correlation")
+            fig_correlation = px.scatter(
+                account_diff,
+                x='Total Cost',
+                y='NET',
+                size='Orders',
+                color='Margin %',
+                color_continuous_scale='Viridis',
+                hover_data=['Account Name', 'Difference'],
+                trendline="ols"  # Add trend line
+            )
+            fig_correlation.update_layout(
+                height=400,
+                xaxis_title="Total Cost (EUR)",
+                yaxis_title="NET Amount (EUR)"
+            )
+            st.plotly_chart(fig_correlation, use_container_width=True)
+        
+        with col4:
+            st.markdown("#### 📊 Pareto Analysis - 80/20 Rule")
+            # Sort by Total Cost descending
+            pareto_data = account_diff.sort_values('Total Cost', ascending=False).reset_index(drop=True)
+            pareto_data['Cumulative Cost'] = pareto_data['Total Cost'].cumsum()
+            pareto_data['Cumulative %'] = (pareto_data['Cumulative Cost'] / pareto_data['Total Cost'].sum() * 100).round(1)
+            
+            # Take top 20 for visibility
+            pareto_display = pareto_data.head(20)
+            
+            fig_pareto = go.Figure()
+            
+            # Bar chart for individual costs
+            fig_pareto.add_trace(go.Bar(
+                x=pareto_display.index + 1,
+                y=pareto_display['Total Cost'],
+                name='Total Cost',
+                marker_color='lightblue',
+                yaxis='y'
+            ))
+            
+            # Line chart for cumulative percentage
+            fig_pareto.add_trace(go.Scatter(
+                x=pareto_display.index + 1,
+                y=pareto_display['Cumulative %'],
+                name='Cumulative %',
+                mode='lines+markers',
+                marker_color='red',
+                yaxis='y2',
+                line=dict(width=2)
+            ))
+            
+            # Add 80% reference line
+            fig_pareto.add_hline(y=80, line_dash="dash", line_color="green", 
+                                annotation_text="80%", yref='y2')
+            
+            fig_pareto.update_layout(
+                height=400,
+                xaxis_title="Account Rank",
+                yaxis=dict(title="Total Cost (EUR)", side='left'),
+                yaxis2=dict(title="Cumulative %", overlaying='y', side='right', range=[0, 100]),
+                hovermode='x unified',
+                showlegend=True,
+                legend=dict(x=0.01, y=0.99)
+            )
+            
+            st.plotly_chart(fig_pareto, use_container_width=True)
+            
+            # Show Pareto insight
+            accounts_80 = pareto_data[pareto_data['Cumulative %'] <= 80].shape[0]
+            total_accounts = len(pareto_data)
+            if total_accounts > 0:
+                st.info(f"💡 **Pareto Insight**: {accounts_80} accounts ({accounts_80/total_accounts*100:.1f}%) contribute to 80% of total costs")
+        
+        # Display the detailed table
+        st.markdown("---")
+        st.markdown("### 📊 Detailed Account Table")
+        
+        # Prepare table data
+        account_table = account_diff.copy()
+        account_table = account_table.sort_values('Difference', ascending=False, key=abs)
+        
+        # Format the columns for display
+        for col in ['Total Cost', 'NET', 'Difference', 'Total Invoiced']:
+            account_table[col] = account_table[col].apply(lambda x: f"€{x:,.2f}")
+        account_table['Margin %'] = account_table['Margin %'].apply(lambda x: f"{x:.1f}%")
+        
+        # Rename columns for display
+        account_table = account_table.rename(columns={
+            'Total Cost': 'Total Cost (EUR)',
+            'NET': 'NET (EUR)',
+            'Difference': 'Margin (EUR)',
+            'Total Invoiced': 'Invoiced (EUR)'
+        })
         
         # Display table with conditional formatting
         st.dataframe(
-            account_diff.head(15),
+            account_table.head(20),
             use_container_width=True,
             hide_index=True,
             column_config={
                 "Account": st.column_config.TextColumn("Account", width="small"),
-                "Account Name": st.column_config.TextColumn("Account Name", width="large"),
+                "Account Name": st.column_config.TextColumn("Account Name", width="medium"),
                 "Orders": st.column_config.NumberColumn("Orders", width="small"),
+                "Margin %": st.column_config.TextColumn("Margin %", width="small"),
             }
         )
         
@@ -407,7 +572,7 @@ if uploaded_file is not None:
             # Summary statistics
             st.download_button(
                 label="📊 Download Summary Report (CSV)",
-                data=account_diff.to_csv(index=False),
+                data=account_table.to_csv(index=False),
                 file_name=f"account_summary_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv",
                 mime="text/csv"
             )
