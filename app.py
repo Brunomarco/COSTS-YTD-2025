@@ -410,6 +410,104 @@ if uploaded_file is not None:
                 "Orders": st.column_config.NumberColumn("Orders", width="small"),
             }
         )
+                # EXPANDED: Detailed Account Analysis Section
+        st.markdown("---")
+        st.subheader("📋 Account Cost Analysis & Differences")
+        
+        # Calculate account differences
+        account_diff = filtered_df.groupby(['ACCT', 'ACCT NM']).agg({
+            'Total cost_EUR': 'sum',
+            'NET_EUR': 'sum',
+            'ORD#': 'count',
+            'TOTAL$_EUR': 'sum'
+        }).reset_index()
+        account_diff.columns = ['Account', 'Account Name', 'Total Cost', 'NET', 'Orders', 'Total Invoiced']
+        account_diff['Difference'] = account_diff['NET'] - account_diff['Total Cost']
+        account_diff['Margin %'] = ((account_diff['NET'] - account_diff['Total Cost']) / account_diff['Total Cost'] * 100).round(2)
+        
+        # Create visualizations for the differences
+        col1, col2 = st.columns(2)
+        
+        with col1:
+            st.markdown("#### 📊 Top 10 Accounts by Margin (NET - Cost)")
+            top_margins = account_diff.nlargest(10, 'Difference')
+            
+            fig_margin = px.bar(
+                top_margins,
+                x='Difference',
+                y='Account Name',
+                orientation='h',
+                color='Difference',
+                color_continuous_scale='RdYlGn',
+                text='Difference',
+                hover_data=['Total Cost', 'NET', 'Margin %']
+            )
+            fig_margin.update_traces(texttemplate='€%{text:,.0f}', textposition='outside')
+            fig_margin.update_layout(
+                height=400,
+                xaxis_title="Margin (EUR)",
+                yaxis_title="",
+                showlegend=False
+            )
+            fig_margin.update_yaxes(autorange='reversed')
+            st.plotly_chart(fig_margin, use_container_width=True)
+        
+            with col2:
+                st.markdown("#### 🥇 Margin % Leaderboard / Distribution")
+            
+                # numeric (chart-safe) account diffs
+                account_diff_num = build_account_diff_numeric(filtered_df)
+            
+                view = st.radio(
+                    "View",
+                    ["Top 10 by Margin %", "Worst 10 by Margin %", "Histogram (all accounts)"],
+                    horizontal=True,
+                    key="margin_col2_view"
+                )
+            
+                if view == "Top 10 by Margin %":
+                    top_pct = account_diff_num.dropna(subset=['Margin %']).nlargest(10, 'Margin %')
+                    fig_margin_pct = px.bar(
+                        top_pct,
+                        x='Margin %',
+                        y='Account Name',
+                        orientation='h',
+                        text=top_pct['Margin %'].round(1),
+                        color='Margin %',
+                        color_continuous_scale='RdYlGn'
+                    )
+                    fig_margin_pct.update_traces(texttemplate='%{text}%', textposition='outside')
+                    fig_margin_pct.update_layout(height=400, xaxis_title="Margin %", yaxis_title="", showlegend=False)
+                    fig_margin_pct.update_yaxes(autorange='reversed')
+                    st.plotly_chart(fig_margin_pct, use_container_width=True)
+            
+                elif view == "Worst 10 by Margin %":
+                    worst_pct = account_diff_num.dropna(subset=['Margin %']).nsmallest(10, 'Margin %')
+                    fig_worst = px.bar(
+                        worst_pct,
+                        x='Margin %',
+                        y='Account Name',
+                        orientation='h',
+                        text=worst_pct['Margin %'].round(1),
+                        color='Margin %',
+                        color_continuous_scale='RdYlGn'
+                    )
+                    fig_worst.update_traces(texttemplate='%{text}%', textposition='outside')
+                    fig_worst.update_layout(height=400, xaxis_title="Margin %", yaxis_title="", showlegend=False)
+                    fig_worst.update_yaxes(autorange='reversed')
+                    st.plotly_chart(fig_worst, use_container_width=True)
+            
+                else:  # Histogram
+                    fig_hist = px.histogram(
+                        account_diff_num.dropna(subset=['Margin %']),
+                        x='Margin %',
+                        nbins=40,
+                        opacity=0.9
+                    )
+                    fig_hist.update_layout(height=400, xaxis_title="Margin %", yaxis_title="Accounts (#)")
+                    fig_hist.add_vline(x=0, line_dash="dash", line_color="gray")
+                    st.plotly_chart(fig_hist, use_container_width=True)
+            
         
         # Download processed data
         st.markdown("---")
