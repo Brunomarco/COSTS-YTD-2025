@@ -457,55 +457,53 @@ if uploaded_file is not None:
         # Create visualizations for the differences
         col1, col2 = st.columns(2)
         
-            with col1:
-                st.markdown("#### 📊 Top 10 Accounts by Margin (NET - Cost)")
-            
-                # Ensure we’re using numeric values (in case earlier you formatted as strings elsewhere)
-                tmp = account_diff.copy()
-                for c in ['Total Cost', 'NET', 'Difference', 'Margin %']:
-                    tmp[c] = pd.to_numeric(tmp[c], errors='coerce')
-            
-                # Top 10 by margin € (positive). If you prefer by absolute margin, use:
-                # top = tmp.reindex(tmp['Difference'].abs().sort_values(ascending=False).index).head(10)
-                top = tmp.nlargest(10, 'Difference').sort_values('Difference')  # low→high for clean layout
-            
-                fig_margin = px.bar(
-                    top,
-                    x='Difference',
-                    y='Account Name',
-                    orientation='h',
-                    color='Difference',
-                    color_continuous_scale='RdYlGn',
-                    color_continuous_midpoint=0,  # <-- center color at zero
-                    text=[f"€{m:,.0f} | {p:.1f}%" for m, p in zip(top['Difference'], top['Margin %'])]
-                )
-            
-                fig_margin.update_traces(
-                    textposition='outside',
-                    hovertemplate=(
-                        "<b>%{y}</b><br>"
-                        "Margin: €%{x:,.0f}<br>"
-                        "Margin %: %{customdata[0]:.1f}%<br>"
-                        "NET: €%{customdata[1]:,.0f}<br>"
-                        "Cost: €%{customdata[2]:,.0f}<extra></extra>"
-                    ),
-                    # Pass extra fields for the hovertemplate
-                    customdata=top[['Margin %', 'NET', 'Total Cost']].values
-                )
-            
-                fig_margin.update_layout(
-                    height=420,
-                    showlegend=False,
-                    xaxis_title="Margin (EUR)",
-                    yaxis_title="",
-                    xaxis=dict(zeroline=True, zerolinewidth=1, zerolinecolor='gray', tickformat=",.0f"),
-                    margin=dict(l=10, r=10, t=10, b=10)
-                )
-                # Keep the largest at the bottom (read top-down as biggest at bottom)
-                fig_margin.update_yaxes(autorange='reversed')
-            
-                st.plotly_chart(fig_margin, use_container_width=True)
 
+        with col1:
+            st.markdown("#### 📊 Top 10 Accounts by Margin (NET - Cost)")
+
+            # Ensure we’re using numeric values (in case earlier you formatted as strings elsewhere)
+            tmp = account_diff.copy()
+            for c in ['Total Cost', 'NET', 'Difference', 'Margin %']:
+                tmp[c] = pd.to_numeric(tmp[c], errors='coerce')
+
+            # Top 10 by margin € (positive). If you prefer by absolute margin, use:
+            # top = tmp.reindex(tmp['Difference'].abs().sort_values(ascending=False).index).head(10)
+            top = tmp.nlargest(10, 'Difference').sort_values('Difference')  # low→high for clean layout
+
+            fig_margin = px.bar(
+                top,
+                x='Difference',
+                y='Account Name',
+                orientation='h',
+                color='Difference',
+                color_continuous_scale='RdYlGn',
+                color_continuous_midpoint=0,  # <-- center color at zero
+                text=[f"€{m:,.0f} | {p:.1f}%" for m, p in zip(top['Difference'], top['Margin %'])]
+            )
+
+            fig_margin.update_traces(
+                textposition='outside',
+                hovertemplate=(
+                    "<b>%{y}</b><br>"
+                    "Margin: €%{x:,.0f}<br>"
+                    "Margin %: %{customdata[0]:.1f}%<br>"
+                    "NET: €%{customdata[1]:,.0f}<br>"
+                    "Cost: €%{customdata[2]:,.0f}<extra></extra>"
+                ),
+                customdata=top[['Margin %', 'NET', 'Total Cost']].values
+            )
+
+            fig_margin.update_layout(
+                height=420,
+                showlegend=False,
+                xaxis_title="Margin (EUR)",
+                yaxis_title="",
+                xaxis=dict(zeroline=True, zerolinewidth=1, zerolinecolor='gray', tickformat=",.0f"),
+                margin=dict(l=10, r=10, t=10, b=10)
+            )
+            fig_margin.update_yaxes(autorange='reversed')
+
+            st.plotly_chart(fig_margin, use_container_width=True)
         
             with col2:
                 st.markdown("#### 🥇 Margin % Leaderboard / Distribution")
