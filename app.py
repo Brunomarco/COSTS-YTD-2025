@@ -3,6 +3,7 @@ import pandas as pd
 import plotly.express as px
 import plotly.graph_objects as go
 from datetime import datetime
+from plotly.subplots import make_subplots
 
 # Page configuration
 st.set_page_config(
@@ -334,38 +335,57 @@ if uploaded_file is not None:
         col1, col2 = st.columns(2)
         
         with col1:
-            st.subheader("📈 Monthly Cost Trend")
-            monthly_data = filtered_df.groupby('Month').agg({
-                'Total cost_EUR': 'sum',
-                'ORD#': 'count'
-            }).reset_index()
-            monthly_data.columns = ['Month', 'Total Cost', 'Orders']
-            
-            fig_trend = go.Figure()
-            fig_trend.add_trace(go.Bar(
-                x=monthly_data['Month'],
-                y=monthly_data['Total Cost'],
-                name='Total Cost',
-                marker_color='#667eea'
-            ))
-            fig_trend.add_trace(go.Scatter(
-                x=monthly_data['Month'],
-                y=monthly_data['Orders'] * (monthly_data['Total Cost'].max() / monthly_data['Orders'].max()),
-                name='Orders (scaled)',
-                yaxis='y2',
-                line=dict(color='#f5576c', width=3)
-            ))
+            st.subheader("📈 Monthly Cost Trend (Cost vs. Orders)")
+        
+            # Ensure Month is a real period → timestamp so sorting is chronological
+            tmp = filtered_df.copy()
+            tmp['Month_ts'] = pd.PeriodIndex(tmp['Month'], freq='M').to_timestamp()
+        
+            monthly_data = (
+                tmp.groupby('Month_ts')
+                   .agg({'Total cost_EUR': 'sum', 'ORD#': 'count'})
+                   .reset_index()
+                   .rename(columns={'Month_ts': 'Month', 'Total cost_EUR': 'Total Cost', 'ORD#': 'Orders'})
+                   .sort_values('Month')
+            )
+        
+            fig_trend = make_subplots(specs=[[{"secondary_y": True}]])
+        
+            # Bars: Total Cost (EUR)
+            fig_trend.add_trace(
+                go.Bar(
+                    x=monthly_data['Month'],
+                    y=monthly_data['Total Cost'],
+                    name='Total Cost (EUR)',
+                    hovertemplate='Month: %{x|%b %Y}<br>Total Cost: €%{y:,.0f}<extra></extra>'
+                ),
+                secondary_y=False
+            )
+        
+            # Line: Orders (actual counts)
+            fig_trend.add_trace(
+                go.Scatter(
+                    x=monthly_data['Month'],
+                    y=monthly_data['Orders'],
+                    mode='lines+markers',
+                    name='Orders (#)',
+                    hovertemplate='Month: %{x|%b %Y}<br>Orders: %{y:,}<extra></extra>'
+                ),
+                secondary_y=True
+            )
+        
             fig_trend.update_layout(
                 height=400,
-                xaxis_title="Month",
-                yaxis_title="Total Cost (EUR)",
-                yaxis2=dict(
-                    title="Orders",
-                    overlaying='y',
-                    side='right'
-                ),
-                hovermode='x unified'
+                hovermode='x unified',
+                margin=dict(l=10, r=10, t=40, b=10),
+                legend=dict(orientation='h', yanchor='bottom', y=1.02, xanchor='left', x=0)
             )
+        
+            # Axis titles + formats
+            fig_trend.update_xaxes(title_text="Month", tickformat="%b %Y")
+            fig_trend.update_yaxes(title_text="Total Cost (EUR)", secondary_y=False, tickformat=",.0f")
+            fig_trend.update_yaxes(title_text="Orders (#)", secondary_y=True)
+        
             st.plotly_chart(fig_trend, use_container_width=True)
         
         with col2:
