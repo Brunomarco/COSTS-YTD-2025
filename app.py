@@ -495,13 +495,20 @@ if uploaded_file is not None:
             # Layout
             fig_nc.update_layout(
                 barmode='group',
-                height= max(420, 40 * len(top) + 120),   # ensure enough room for labels
+                height=max(420, 40 * len(top) + 120),
                 xaxis_title="EUR",
                 yaxis_title="",
                 xaxis=dict(tickformat=",.0f"),
-                margin=dict(l=10, r=10, t=10, b=10),
-                legend=dict(orientation='h', yanchor='bottom', y=1.02, xanchor='left', x=0)
+                margin=dict(l=10, r=10, t=10, b=40),   # more space at bottom
+                legend=dict(
+                    orientation='h',
+                    yanchor='top',
+                    y=-0.2,   # place legend below plot
+                    xanchor='left',
+                    x=0
+                )
             )
+
             fig_nc.update_yaxes(autorange='reversed')  # biggest margin at bottom
         
             # Rich hover showing all numbers on both bars
