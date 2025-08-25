@@ -264,7 +264,7 @@ if uploaded_file is not None:
             }
             
             # Sort by value descending
-            sorted_costs = dict(sorted(cost_totals.items(), key=lambda x: x[1], reverse=True))
+            sorted_costs = dict(sorted(cost_totals.items(), key=lambda x: x[1], reverse=False))
             
             fig_cost_totals = px.bar(
                 x=list(sorted_costs.values()),
