@@ -459,51 +459,68 @@ if uploaded_file is not None:
         
 
         with col1:
-            st.markdown("#### 📊 Top 10 Accounts by Margin (NET - Cost)")
-
-            # Ensure we’re using numeric values (in case earlier you formatted as strings elsewhere)
+            st.markdown("#### 📊 Top 10 Accounts — NET vs Cost (+ Margin label)")
+        
+            # Ensure numeric types
             tmp = account_diff.copy()
             for c in ['Total Cost', 'NET', 'Difference', 'Margin %']:
                 tmp[c] = pd.to_numeric(tmp[c], errors='coerce')
-
-            # Top 10 by margin € (positive). If you prefer by absolute margin, use:
-            # top = tmp.reindex(tmp['Difference'].abs().sort_values(ascending=False).index).head(10)
-            top = tmp.nlargest(10, 'Difference').sort_values('Difference')  # low→high for clean layout
-
-            fig_margin = px.bar(
-                top,
-                x='Difference',
-                y='Account Name',
+        
+            # Pick top 10 by margin € and sort for neat layout
+            top = tmp.nlargest(10, 'Difference').sort_values('Difference')
+        
+            # Build grouped bars: Cost vs NET
+            fig_nc = go.Figure()
+        
+            # Cost bars
+            fig_nc.add_trace(go.Bar(
+                y=top['Account Name'],
+                x=top['Total Cost'],
+                name='Cost (EUR)',
                 orientation='h',
-                color='Difference',
-                color_continuous_scale='RdYlGn',
-                color_continuous_midpoint=0,  # <-- center color at zero
-                text=[f"€{m:,.0f} | {p:.1f}%" for m, p in zip(top['Difference'], top['Margin %'])]
-            )
-
-            fig_margin.update_traces(
+                hovertemplate="<b>%{y}</b><br>Cost: €%{x:,.0f}<extra></extra>"
+            ))
+        
+            # NET bars (with margin labels)
+            fig_nc.add_trace(go.Bar(
+                y=top['Account Name'],
+                x=top['NET'],
+                name='NET (EUR)',
+                orientation='h',
+                text=[f"€{d:,.0f} | {p:.1f}%" for d, p in zip(top['Difference'], top['Margin %'])],
                 textposition='outside',
-                hovertemplate=(
-                    "<b>%{y}</b><br>"
-                    "Margin: €%{x:,.0f}<br>"
-                    "Margin %: %{customdata[0]:.1f}%<br>"
-                    "NET: €%{customdata[1]:,.0f}<br>"
-                    "Cost: €%{customdata[2]:,.0f}<extra></extra>"
-                ),
-                customdata=top[['Margin %', 'NET', 'Total Cost']].values
-            )
-
-            fig_margin.update_layout(
-                height=420,
-                showlegend=False,
-                xaxis_title="Margin (EUR)",
+                hovertemplate="<b>%{y}</b><br>NET: €%{x:,.0f}<extra></extra>"
+            ))
+        
+            # Layout
+            fig_nc.update_layout(
+                barmode='group',
+                height= max(420, 40 * len(top) + 120),   # ensure enough room for labels
+                xaxis_title="EUR",
                 yaxis_title="",
-                xaxis=dict(zeroline=True, zerolinewidth=1, zerolinecolor='gray', tickformat=",.0f"),
-                margin=dict(l=10, r=10, t=10, b=10)
+                xaxis=dict(tickformat=",.0f"),
+                margin=dict(l=10, r=10, t=10, b=10),
+                legend=dict(orientation='h', yanchor='bottom', y=1.02, xanchor='left', x=0)
             )
-            fig_margin.update_yaxes(autorange='reversed')
+            fig_nc.update_yaxes(autorange='reversed')  # biggest margin at bottom
+        
+            # Rich hover showing all numbers on both bars
+            fig_nc.update_traces(
+                customdata=top[['Difference', 'Margin %', 'Total Cost', 'NET']].values,
+                selector=dict(type='bar')
+            )
+            fig_nc.update_traces(
+                hovertemplate=(
+                    "<b>%{y}</b><br>" +
+                    "%{fullData.name}: €%{x:,.0f}<br>" +
+                    "Margin: €%{customdata[0]:,.0f} | %{customdata[1]:.1f}%<br>" +
+                    "Cost: €%{customdata[2]:,.0f} | NET: €%{customdata[3]:,.0f}" +
+                    "<extra></extra>"
+                )
+            )
+        
+            st.plotly_chart(fig_nc, use_container_width=True)
 
-            st.plotly_chart(fig_margin, use_container_width=True)
         
             with col2:
                 st.markdown("#### 🥇 Margin % Leaderboard / Distribution")
