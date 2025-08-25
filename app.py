@@ -187,7 +187,7 @@ if uploaded_file is not None:
             filtered_df = filtered_df[filtered_df['PU CTRY'].isin(selected_countries)]
         
        # Key Metrics
-        col1, col2, col3, col4 = st.columns(4)
+        col1, col2, col3, col4 = st.columns(1.1, 1.4, 1.4, 1.0)
         
         with col1:
             total_orders = len(filtered_df)
