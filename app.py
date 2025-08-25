@@ -23,6 +23,13 @@ st.markdown("""
     </style>
 """, unsafe_allow_html=True)
 
+st.markdown("""
+    <style>
+    [data-testid="stMetricValue"] { white-space: nowrap; overflow: visible; }
+    [data-testid="stMetricDelta"] { white-space: nowrap; overflow: visible; }
+    </style>
+""", unsafe_allow_html=True)
+
 # Title and description
 st.title("📊 Cost Analysis Dashboard 2025")
 st.markdown("### Comprehensive analysis of order costs and account performance")
@@ -179,7 +186,7 @@ if uploaded_file is not None:
         if selected_countries:
             filtered_df = filtered_df[filtered_df['PU CTRY'].isin(selected_countries)]
         
-        # Key Metrics
+       # Key Metrics
         col1, col2, col3, col4 = st.columns(4)
         
         with col1:
@@ -187,15 +194,16 @@ if uploaded_file is not None:
             st.metric(
                 label="📦 Total Billed Orders",
                 value=f"{total_orders:,}",
-                delta=f"All orders shown are 440-BILLED"
+                delta="All orders shown are 440-BILLED"
             )
         
         with col2:
             total_cost = filtered_df['Total cost_EUR'].sum()
+            avg_cost = total_cost / total_orders if total_orders > 0 else 0
             st.metric(
                 label="💰 Total Cost (EUR)",
                 value=f"€{total_cost:,.2f}",
-                delta=f"Avg: €{(total_cost/total_orders if total_orders > 0 else 0):,.2f}"
+                delta=f"Avg: €{avg_cost:,.2f}"
             )
         
         with col3:
@@ -211,12 +219,13 @@ if uploaded_file is not None:
         
         with col4:
             unique_accounts = filtered_df['ACCT'].nunique()
+            active_accounts = filtered_df[filtered_df['Total cost_EUR'] > 0]['ACCT'].nunique()
             st.metric(
                 label="👥 Unique Accounts",
                 value=f"{unique_accounts:,}",
-                delta=f"Active: {filtered_df[filtered_df['Total cost_EUR'] > 0]['ACCT'].nunique()}"
+                delta=f"Active: {active_accounts}"
             )
-        
+
         st.markdown("---")
         
         # Create two columns for charts
