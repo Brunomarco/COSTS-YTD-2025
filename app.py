@@ -528,39 +528,37 @@ if uploaded_file is not None:
         
             st.plotly_chart(fig_nc, use_container_width=True)
 
-        
             with col2:
-                st.markdown("#### 💸 Accounts Generating Only Cost (No NET)")
-            
-                # Build numeric (chart-safe) account diffs inline
-                account_cost_only = (
-                    filtered_df.groupby(['ACCT', 'ACCT NM'])
-                    .agg({'Total cost_EUR': 'sum', 'NET_EUR': 'sum', 'ORD#': 'count'})
-                    .reset_index()
-                    .rename(columns={'ACCT NM': 'Account Name'})
-                )
-            
-                # Keep only accounts with cost > 0 and NET == 0
-                account_cost_only = account_cost_only[
-                    (account_cost_only['Total cost_EUR'] > 0) & (account_cost_only['NET_EUR'] == 0)
-                ]
-            
-                if account_cost_only.empty:
-                    st.info("✅ No accounts found that only generate cost without NET.")
+                st.markdown("#### 💸 Accounts with Only Costs (No NET)")
+                
+                # Find accounts that have costs but zero NET
+                cost_only = account_diff[
+                    (account_diff['Total Cost'] > 0) & 
+                    (account_diff['NET'] == 0)
+                ].copy()
+                
+                if len(cost_only) == 0:
+                    st.info("All accounts with costs have associated NET amounts.")
                 else:
-                    # Sort by Total Cost descending
-                    account_cost_only = account_cost_only.sort_values('Total cost_EUR', ascending=False).head(10)
-            
+                    # Sort by total cost descending
+                    cost_only = cost_only.sort_values('Total Cost', ascending=False)
+                    
+                    # Create bar chart
                     fig_cost_only = px.bar(
-                        account_cost_only,
-                        x='Total cost_EUR',
+                        cost_only.head(10),
+                        x='Total Cost',
                         y='Account Name',
                         orientation='h',
-                        text=account_cost_only['Total cost_EUR'].apply(lambda v: f"€{v:,.0f}"),
-                        color='Total cost_EUR',
-                        color_continuous_scale='Reds'
+                        color='Total Cost',
+                        color_continuous_scale='Oranges',
+                        text='Total Cost'
                     )
-                    fig_cost_only.update_traces(textposition='outside')
+                    
+                    fig_cost_only.update_traces(
+                        texttemplate='€%{text:,.0f}',
+                        textposition='inside'
+                    )
+                    
                     fig_cost_only.update_layout(
                         height=400,
                         xaxis_title="Total Cost (EUR)",
@@ -568,9 +566,15 @@ if uploaded_file is not None:
                         showlegend=False
                     )
                     fig_cost_only.update_yaxes(autorange='reversed')
-            
+                    
                     st.plotly_chart(fig_cost_only, use_container_width=True)
-
+                    
+                    # Show total
+                    st.metric(
+                        "Total Cost (Zero NET)",
+                        f"€{cost_only['Total Cost'].sum():,.0f}",
+                        delta=f"{len(cost_only)} accounts"
+                    )
 
         
         # Footer
