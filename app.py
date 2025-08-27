@@ -529,53 +529,75 @@ if uploaded_file is not None:
             st.plotly_chart(fig_nc, use_container_width=True)
 
             with col2:
-                st.markdown("#### 💸 Accounts with Only Costs (No NET)")
+                st.markdown("#### 📈 Cost Efficiency by Office")
                 
-                # Find accounts that have costs but zero NET
-                cost_only = account_diff[
-                    (account_diff['Total Cost'] > 0) & 
-                    (account_diff['NET'] == 0)
-                ].copy()
+                # Group by office to analyze performance
+                office_analysis = filtered_df.groupby('OFC').agg({
+                    'Total cost_EUR': 'sum',
+                    'NET_EUR': 'sum',
+                    'ORD#': 'count',
+                    'ACCT': 'nunique'
+                }).reset_index()
                 
-                if len(cost_only) == 0:
-                    st.info("All accounts with costs have associated NET amounts.")
-                else:
-                    # Sort by total cost descending
-                    cost_only = cost_only.sort_values('Total Cost', ascending=False)
-                    
-                    # Create bar chart
-                    fig_cost_only = px.bar(
-                        cost_only.head(10),
-                        x='Total Cost',
-                        y='Account Name',
-                        orientation='h',
-                        color='Total Cost',
-                        color_continuous_scale='Oranges',
-                        text='Total Cost'
-                    )
-                    
-                    fig_cost_only.update_traces(
-                        texttemplate='€%{text:,.0f}',
-                        textposition='inside'
-                    )
-                    
-                    fig_cost_only.update_layout(
-                        height=400,
-                        xaxis_title="Total Cost (EUR)",
-                        yaxis_title="",
-                        showlegend=False
-                    )
-                    fig_cost_only.update_yaxes(autorange='reversed')
-                    
-                    st.plotly_chart(fig_cost_only, use_container_width=True)
-                    
-                    # Show total
+                office_analysis.columns = ['Office', 'Total Cost', 'NET', 'Orders', 'Unique Accounts']
+                office_analysis['Margin'] = office_analysis['NET'] - office_analysis['Total Cost']
+                office_analysis['Margin %'] = (office_analysis['Margin'] / office_analysis['Total Cost'] * 100).round(1)
+                office_analysis['Avg Order Cost'] = office_analysis['Total Cost'] / office_analysis['Orders']
+                office_analysis['Avg Order NET'] = office_analysis['NET'] / office_analysis['Orders']
+                
+                # Sort by margin % to show best performing offices
+                office_analysis = office_analysis.sort_values('Margin %', ascending=False)
+                
+                # Create grouped bar chart
+                fig_office = go.Figure()
+                
+                fig_office.add_trace(go.Bar(
+                    x=office_analysis['Office'],
+                    y=office_analysis['Avg Order Cost'],
+                    name='Avg Cost per Order',
+                    marker_color='lightcoral',
+                    text=[f'€{v:,.0f}' for v in office_analysis['Avg Order Cost']],
+                    textposition='inside'
+                ))
+                
+                fig_office.add_trace(go.Bar(
+                    x=office_analysis['Office'],
+                    y=office_analysis['Avg Order NET'],
+                    name='Avg NET per Order',
+                    marker_color='lightgreen',
+                    text=[f'€{v:,.0f}' for v in office_analysis['Avg Order NET']],
+                    textposition='inside'
+                ))
+                
+                fig_office.update_layout(
+                    height=400,
+                    barmode='group',
+                    xaxis_title="Office",
+                    yaxis_title="Average per Order (EUR)",
+                    showlegend=True,
+                    legend=dict(x=0.7, y=1)
+                )
+                
+                st.plotly_chart(fig_office, use_container_width=True)
+                
+                # Show best and worst performing office
+                best_office = office_analysis.iloc[0]
+                worst_office = office_analysis.iloc[-1]
+                
+                col2a, col2b = st.columns(2)
+                with col2a:
                     st.metric(
-                        "Total Cost (Zero NET)",
-                        f"€{cost_only['Total Cost'].sum():,.0f}",
-                        delta=f"{len(cost_only)} accounts"
+                        f"Best: {best_office['Office']}",
+                        f"{best_office['Margin %']:.1f}% margin",
+                        f"{best_office['Orders']} orders"
                     )
-
+                with col2b:
+                    st.metric(
+                        f"Worst: {worst_office['Office']}",
+                        f"{worst_office['Margin %']:.1f}% margin",
+                        f"{worst_office['Orders']} orders",
+                        delta_color="inverse"
+                    )
         
         # Footer
         st.markdown("---")
