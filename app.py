@@ -530,96 +530,48 @@ if uploaded_file is not None:
 
         
             with col2:
-                st.markdown("#### 🥇 Margin % Leaderboard / Distribution")
+                st.markdown("#### 💸 Accounts Generating Only Cost (No NET)")
             
                 # Build numeric (chart-safe) account diffs inline
-                account_diff_num = (
+                account_cost_only = (
                     filtered_df.groupby(['ACCT', 'ACCT NM'])
                     .agg({'Total cost_EUR': 'sum', 'NET_EUR': 'sum', 'ORD#': 'count'})
                     .reset_index()
                     .rename(columns={'ACCT NM': 'Account Name'})
                 )
-                account_diff_num['Difference'] = account_diff_num['NET_EUR'] - account_diff_num['Total cost_EUR']
-                account_diff_num['Margin %'] = account_diff_num.apply(
-                    lambda r: (r['Difference'] / r['Total cost_EUR'] * 100) if r['Total cost_EUR'] > 0 else None,
-                    axis=1
-                )
             
-                # Guard: no computable margins
-                if account_diff_num['Margin %'].notna().sum() == 0:
-                    st.info("No accounts with computable Margin % (likely because Total Cost = 0).")
+                # Keep only accounts with cost > 0 and NET == 0
+                account_cost_only = account_cost_only[
+                    (account_cost_only['Total cost_EUR'] > 0) & (account_cost_only['NET_EUR'] == 0)
+                ]
+            
+                if account_cost_only.empty:
+                    st.info("✅ No accounts found that only generate cost without NET.")
                 else:
-                    view = st.radio(
-                        "View",
-                        ["Top 10 by Margin %", "Worst 10 by Margin %", "Histogram (all accounts)"],
-                        horizontal=True,
-                        key="margin_col2_view"
+                    # Sort by Total Cost descending
+                    account_cost_only = account_cost_only.sort_values('Total cost_EUR', ascending=False).head(10)
+            
+                    fig_cost_only = px.bar(
+                        account_cost_only,
+                        x='Total cost_EUR',
+                        y='Account Name',
+                        orientation='h',
+                        text=account_cost_only['Total cost_EUR'].apply(lambda v: f"€{v:,.0f}"),
+                        color='Total cost_EUR',
+                        color_continuous_scale='Reds'
                     )
+                    fig_cost_only.update_traces(textposition='outside')
+                    fig_cost_only.update_layout(
+                        height=400,
+                        xaxis_title="Total Cost (EUR)",
+                        yaxis_title="",
+                        showlegend=False
+                    )
+                    fig_cost_only.update_yaxes(autorange='reversed')
             
-                    if view == "Top 10 by Margin %":
-                        top_pct = account_diff_num.dropna(subset=['Margin %']).nlargest(10, 'Margin %')
-                        fig_margin_pct = px.bar(
-                            top_pct,
-                            x='Margin %',
-                            y='Account Name',
-                            orientation='h',
-                            text=top_pct['Margin %'].round(1),
-                            color='Margin %',
-                            color_continuous_scale='RdYlGn'
-                        )
-                        fig_margin_pct.update_traces(texttemplate='%{text}%', textposition='outside')
-                        fig_margin_pct.update_layout(height=400, xaxis_title="Margin %", yaxis_title="", showlegend=False)
-                        fig_margin_pct.update_yaxes(autorange='reversed')
-                        st.plotly_chart(fig_margin_pct, use_container_width=True)
-            
-                    elif view == "Worst 10 by Margin %":
-                        worst_pct = account_diff_num.dropna(subset=['Margin %']).nsmallest(10, 'Margin %')
-                        fig_worst = px.bar(
-                            worst_pct,
-                            x='Margin %',
-                            y='Account Name',
-                            orientation='h',
-                            text=worst_pct['Margin %'].round(1),
-                            color='Margin %',
-                            color_continuous_scale='RdYlGn'
-                        )
-                        fig_worst.update_traces(texttemplate='%{text}%', textposition='outside')
-                        fig_worst.update_layout(height=400, xaxis_title="Margin %", yaxis_title="", showlegend=False)
-                        fig_worst.update_yaxes(autorange='reversed')
-                        st.plotly_chart(fig_worst, use_container_width=True)
-            
-                    else:  # Histogram
-                        fig_hist = px.histogram(
-                            account_diff_num.dropna(subset=['Margin %']),
-                            x='Margin %',
-                            nbins=40,
-                            opacity=0.9
-                        )
-                        fig_hist.update_layout(height=400, xaxis_title="Margin %", yaxis_title="Accounts (#)")
-                        fig_hist.add_vline(x=0, line_dash="dash", line_color="gray")
-                        st.plotly_chart(fig_hist, use_container_width=True)
+                    st.plotly_chart(fig_cost_only, use_container_width=True)
 
-        
-        # Download processed data
-        st.markdown("---")
-        col1, col2, col3 = st.columns([1, 1, 2])
-        with col1:
-            csv = filtered_df.to_csv(index=False)
-            st.download_button(
-                label="📥 Download Filtered Data (CSV)",
-                data=csv,
-                file_name=f"cost_analysis_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv",
-                mime="text/csv"
-            )
-        
-        with col2:
-            # Summary statistics
-            st.download_button(
-                label="📊 Download Summary Report (CSV)",
-                data=account_diff.to_csv(index=False),
-                file_name=f"account_summary_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv",
-                mime="text/csv"
-            )
+
         
         # Footer
         st.markdown("---")
