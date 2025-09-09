@@ -234,7 +234,7 @@ if uploaded_file is not None:
         
         with col1:
             # Cost Breakdown Pie Chart
-            st.subheader("🍩 Cost Breakdown by Type")
+            st.subheader("Cost Breakdown by Type")
             cost_breakdown = {
                 'PU Cost': filtered_df['PU COST_EUR'].sum(),
                 'Ship Cost': filtered_df['SHIP COST_EUR'].sum(),
